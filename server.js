@@ -1,8 +1,10 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const app = express();
-const port = 3000; // You can change this port if needed
+const port = process.env.PORT || 3000;
 const https = require('https');
 const fs = require('fs');
 
@@ -13,7 +15,7 @@ const options = {
 
 // Configure CORS - in production, restrict this to your Qlik Sense domain
 app.use(cors({
-  origin: 'https://spmad-mby1', // Replace with your Qlik Sense server URL
+  origin: process.env.QLIK_ORIGIN || 'https://your-qlik-server', // Set QLIK_ORIGIN in .env
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'Origin', 'X-Requested-With', 'Accept', 'anthropic-version'],
