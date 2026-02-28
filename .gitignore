@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# API keys / secretos
+.env
+*.env
+
+# Node (por si se añade proxy en el futuro)
+node_modules/
+npm-debug.log*
+
+# VS Code
+.vscode/
+
+# Logs
+*.log

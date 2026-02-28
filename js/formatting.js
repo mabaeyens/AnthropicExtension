@@ -1,0 +1,74 @@
+define([], function() {
+  'use strict';
+
+  return {
+    /**
+     * Format the API response text with markdown-like formatting
+     * @param {string} text - The response text
+     * @returns {string} - Formatted HTML
+     */
+    formatResponseText: function (text) {
+      if (!text) return '';
+      
+      // Simple markdown-like formatting
+      let formatted = text
+        .replace(/\n\n/g, '<br><br>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+      // Handle code blocks
+      formatted = formatted.replace(/```([\s\S]*?)```/g, function (match, code) {
+        return '<pre><code>' + code + '</code></pre>';
+      });
+
+      return formatted;
+    },
+    
+    /**
+     * Format error messages into HTML
+     * @param {object|string} error - The error object or string
+     * @returns {string} - Formatted HTML error message
+     */
+    formatErrorMessage: function(error) {
+      if (typeof error === 'string') {
+        return '<div class="error"><p>' + error + '</p></div>';
+      }
+      
+      let errorHtml = '<div class="error"><p>Error communicating with Anthropic API:</p>';
+      
+      if (error.message) {
+        errorHtml += '<p>' + error.message + '</p>';
+      }
+      
+      if (error.status) {
+        errorHtml += '<p>Status: ' + error.status + '</p>';
+      }
+      
+      if (error.details) {
+        errorHtml += '<p>Details: ' + error.details + '</p>';
+      }
+      
+      errorHtml += '</div>';
+      return errorHtml;
+    },
+    
+    /**
+     * Format loading message with animation
+     * @param {string} message - The loading message
+     * @returns {string} - Formatted HTML loading message
+     */
+    formatLoadingMessage: function(message) {
+      return '<div class="loading">' + message + 
+        '<div id="request-progress">Processing...</div></div>';
+    },
+    
+    /**
+     * Format warning message
+     * @param {string} message - The warning message
+     * @returns {string} - Formatted HTML warning message 
+     */
+    formatWarningMessage: function(message) {
+      return '<div class="warning">' + message + '</div>';
+    }
+  };
+});
