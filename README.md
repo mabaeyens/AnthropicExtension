@@ -1,38 +1,43 @@
 # cm-llm-proxy
 
-Proxy HTTPS local que reenvía peticiones desde la extensión Qlik Sense [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) hacia la API de Anthropic.
+Local HTTPS proxy that forwards requests from the Qlik Sense [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) to the Anthropic API.
 
-## ¿Por qué es necesario?
+## Why is this needed?
 
-Qlik Sense Server impone restricciones de CORS y no permite llamadas directas a APIs externas desde el navegador. Este proxy corre en el servidor Qlik (o en local) y actúa como intermediario seguro.
+Qlik Sense Server enforces CORS restrictions and does not allow direct calls to external APIs from the browser. This proxy runs on the Qlik server (or locally) and acts as a secure intermediary.
 
 ```
 Qlik Sense (browser) → https://localhost:3000/api/anthropic → api.anthropic.com
 ```
 
-## Requisitos
+## Requirements
 
 - Node.js >= 18
-- Certificados SSL para `localhost:3000` (ver sección Certificados)
+- SSL certificates for `localhost:3000` (see Certificates section)
 
-## Instalación
+## Setup
 
 ```bash
+# 1. Copy and edit the environment file
+cp .env.example .env
+# Edit .env: set QLIK_ORIGIN to your Qlik Sense server URL
+
+# 2. Install dependencies
 npm install
 ```
 
-## Configuración
+## Configuration
 
-Edita `server.js` para ajustar:
+All settings are configured via `.env` (copied from `.env.example`):
 
-| Parámetro | Descripción | Valor por defecto |
+| Variable | Description | Default |
 |---|---|---|
-| `port` | Puerto del servidor | `3000` |
-| `origin` | Dominio de Qlik Sense permitido por CORS | `https://spmad-mby1` |
+| `QLIK_ORIGIN` | Qlik Sense server URL allowed by CORS | `https://your-qlik-server` |
+| `PORT` | Proxy server port | `3000` |
 
-## Certificados
+## Certificates
 
-Los ficheros `certs/localhost3000-cert.pem` y `certs/localhost3000-key.pem` del repo son **placeholders vacíos**. Genera tus propios certificados autofirmados:
+The files `certs/localhost3000-cert.pem` and `certs/localhost3000-key.pem` in the repo are **empty placeholders**. Generate your own self-signed certificates:
 
 ```bash
 openssl req -x509 -newkey rsa:4096 -keyout certs/localhost3000-key.pem \
@@ -40,22 +45,22 @@ openssl req -x509 -newkey rsa:4096 -keyout certs/localhost3000-key.pem \
   -subj "/CN=localhost"
 ```
 
-> El certificado debe importarse como confiable en el navegador y en Qlik Sense para evitar errores SSL.
+> The certificate must be imported as trusted in the browser and in Qlik Sense to avoid SSL errors.
 
-## Uso
+## Usage
 
 ```bash
 npm start
 ```
 
-El servidor arranca en `https://localhost:3000`. Endpoints disponibles:
+The server starts at `https://localhost:3000`. Available endpoints:
 
-- `GET  /health` — Comprueba que el proxy está activo
-- `POST /api/anthropic` — Reenvía la petición a `api.anthropic.com/v1/messages`
+- `GET  /health` — Check that the proxy is running
+- `POST /api/anthropic` — Forwards the request to `api.anthropic.com/v1/messages`
 
-La API key de Anthropic se pasa en cada petición mediante la cabecera `x-api-key` (la gestiona la extensión Qlik).
+The Anthropic API key is passed per request via the `x-api-key` header (managed by the Qlik extension).
 
-## Repositorios relacionados
+## Related repositories
 
-- [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) — Extensión Qlik Sense que consume este proxy
-- [RAG](https://github.com/mabaeyens/RAG) — Pipeline RAG con ChromaDB y embeddings locales
+- [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) — Qlik Sense extension that consumes this proxy
+- [RAG](https://github.com/mabaeyens/RAG) — RAG pipeline with ChromaDB and local embeddings
