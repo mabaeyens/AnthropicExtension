@@ -36,11 +36,11 @@ Edita `js/config.js` para ajustar:
 
 ## Proxy requerido
 
-La extensión no llama directamente a la API de Anthropic. Se necesita un servidor proxy Node.js independiente que:
+La extensión no llama directamente a la API de Anthropic. Se necesita el servidor proxy Node.js **[cm-cse-llm-proxy](https://github.com/mby-qlik/cm-cse-llm-proxy)**, que:
 
-- Escuche en `https://localhost:3000/api/anthropic`
-- Acepte peticiones POST con el header `x-api-key` (clave de Anthropic)
-- Las reenvíe a `https://api.anthropic.com/v1/messages`
+- Escucha en `https://localhost:3000/api/anthropic`
+- Acepta peticiones POST con el header `x-api-key` (clave de Anthropic)
+- Las reenvía a `https://api.anthropic.com/v1/messages`
 
 ## Uso
 
@@ -78,7 +78,7 @@ AnthropicExtension/
 - [x] Extracción de datos de gráficos (bar, line, combo, mapa)
 - [x] Análisis con Claude vía proxy
 - [x] Almacenamiento cifrado de API key por app de Qlik
-- [ ] Servidor proxy incluido en el repo
+- [x] Servidor proxy disponible en [mby-qlik/cm-cse-llm-proxy](https://github.com/mby-qlik/cm-cse-llm-proxy)
 - [ ] Soporte para Qlik Cloud (sin necesidad de proxy)
 
 ## Notas
