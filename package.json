@@ -1,0 +1,17 @@
+{
+  "name": "cm-llm-proxy",
+  "version": "1.0.0",
+  "description": "HTTPS proxy server to forward Anthropic API requests from Qlik Sense",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
