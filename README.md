@@ -6,7 +6,7 @@ Extensión de visualización para Qlik Sense que permite analizar datos de gráf
 
 Añade un panel de IA a cualquier dashboard de Qlik Sense. El usuario selecciona una visualización, hace una pregunta en lenguaje natural y recibe un análisis generado por Claude sobre los datos del gráfico.
 
-La extensión se comunica con Anthropic a través de un **servidor proxy local en Node.js** (no incluido en este repo) que escucha en `localhost:3000`. Este proxy es necesario porque Qlik Sense on Windows corre en navegador y los navegadores bloquean llamadas directas a `api.anthropic.com` por CORS.
+La extensión se comunica con Anthropic a través de un **servidor proxy local en Node.js** ([cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)) que escucha en `localhost:3000`. Este proxy es necesario porque Qlik Sense on Windows corre en navegador y los navegadores bloquean llamadas directas a `api.anthropic.com` por CORS.
 
 ## Requisitos
 
@@ -36,7 +36,7 @@ Edita `js/config.js` para ajustar:
 
 ## Proxy requerido
 
-La extensión no llama directamente a la API de Anthropic. Se necesita el servidor proxy Node.js **[cm-cse-llm-proxy](https://github.com/mby-qlik/cm-cse-llm-proxy)**, que:
+La extensión no llama directamente a la API de Anthropic. Se necesita el servidor proxy Node.js **[cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)**, que:
 
 - Escucha en `https://localhost:3000/api/anthropic`
 - Acepta peticiones POST con el header `x-api-key` (clave de Anthropic)
@@ -78,7 +78,7 @@ AnthropicExtension/
 - [x] Extracción de datos de gráficos (bar, line, combo, mapa)
 - [x] Análisis con Claude vía proxy
 - [x] Almacenamiento cifrado de API key por app de Qlik
-- [x] Servidor proxy disponible en [mby-qlik/cm-cse-llm-proxy](https://github.com/mby-qlik/cm-cse-llm-proxy)
+- [x] Servidor proxy disponible en [mabaeyens/cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
 - [ ] Soporte para Qlik Cloud (sin necesidad de proxy)
 
 ## Notas
