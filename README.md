@@ -62,5 +62,5 @@ The Anthropic API key is passed per request via the `x-api-key` header (managed 
 
 ## Related repositories
 
-- [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) — Qlik Sense extension that consumes this proxy
-- [RAG](https://github.com/mabaeyens/RAG) — RAG pipeline with ChromaDB and local embeddings
+- [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension): Qlik Sense extension that consumes this proxy
+- [RAG](https://github.com/mabaeyens/RAG): RAG pipeline with ChromaDB and local embeddings
