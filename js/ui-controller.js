@@ -1,5 +1,5 @@
-define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', './formatting', './config'],
-  function ($, qlik, anthropicAPI, dataCollector, security, formatting, config) {
+define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', './formatting', './config', './template'],
+  function ($, qlik, anthropicAPI, dataCollector, security, formatting, config, template) {
     'use strict';
 
     let $container = null;
@@ -39,44 +39,30 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
       initUI: function ($element, layout) {
         $container = $element;
 
-        // Clear the container
+        // Inject the inlined template synchronously (no fetch, no hard-coded path)
         $container.empty();
+        $container.html(template);
 
-        // Load the template HTML
-        $.get("../extensions/AnthropicExtension/html/template.html", function (templateHtml) {
-          $container.html(templateHtml);
-          
-          // Handle API key status
-          const app = qlik.currApp();
-          const appId = app.id;
-          const storedApiKey = security.getAPIKey(appId);
-          
-          if (storedApiKey) {
-            // API key already stored, update UI
-            $container.find(".api-key-input").html(
-              '<div class="api-key-status">' +
-              '<span style="color: green;">✓ API key stored</span>' +
-              '<button id="clear-api-key" class="lui-button lui-button--small" style="margin-left: 10px;">Clear Key</button>' +
-              '</div>'
-            );
-          }
-          
-          // Show debug area if in debug mode and feature is enabled
-          if (config.DEBUG_MODE && config.FEATURES && config.FEATURES.SHOW_DEBUG_AREA) {
-            $container.find("#debug-area").show();
-          }
-          
-          // Set up event handlers after ensuring the DOM is ready
-          setTimeout(() => {
-            this.setupEventHandlers();
-            console.log("[DEBUG] Event handlers set up with delay for template");
-          }, 100);
-          
-          console.log("UI initialized from template");
-        }.bind(this)).fail(function() {
-          console.error("Failed to load template HTML, falling back to direct HTML creation");
-          this.initUIFallback($element, layout);
-        }.bind(this));
+        // Reflect stored-key state in the UI (shared key, not per-app)
+        const storedApiKey = security.getAPIKey();
+        if (storedApiKey) {
+          $container.find(".api-key-input").html(
+            '<div class="api-key-status">' +
+            '<span style="color: green;">✓ API key stored</span>' +
+            '<button id="clear-api-key" class="lui-button lui-button--small" style="margin-left: 10px;">Clear Key</button>' +
+            '</div>'
+          );
+        }
+
+        // Show debug area only when explicitly enabled
+        if (config.DEBUG_MODE && config.FEATURES && config.FEATURES.SHOW_DEBUG_AREA) {
+          $container.find("#debug-area").show();
+        }
+
+        // DOM is ready synchronously — wire up handlers immediately
+        this.setupEventHandlers();
+
+        console.log("UI initialized from inlined template");
       },
       
       /**
@@ -102,7 +88,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         const appId = app.id;
 
         // Check if API key exists in localStorage
-        const storedApiKey = security.getAPIKey(appId);
+        const storedApiKey = security.getAPIKey();
 
         if (!storedApiKey) {
           // No API key stored, show input field
@@ -221,11 +207,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         }.bind(this));
 
         $container.find("#clear-api-key").on('click', function () {
-          const app = qlik.currApp();
-          const appId = app.id;
-
-          // Clear the API key
-          security.clearAPIKey(appId);
+          // Clear the API key (shared across all apps)
+          security.clearAPIKey();
 
           // Reload the extension to show the API key input
           qlik.resize();
@@ -251,8 +234,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           const appId = app.id;
 
           if (apiKeyInput) {
-            // Store the API key
-            security.storeAPIKey(appId, apiKeyInput);
+            // Store the API key (shared across all apps)
+            security.storeAPIKey(apiKeyInput);
             console.log("[DEBUG] API key stored");
           }
 
@@ -299,7 +282,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             // Show a message that we're collecting context
             $responseArea.html(formatting.formatLoadingMessage('Collecting app context...'));
 
-            dataCollector.getAppContext().then(function (context) {
+            dataCollector.getAppContextCached().then(function (context) {
               console.log("[DEBUG] Context collected, preparing full request");
               
               // Add context to request data

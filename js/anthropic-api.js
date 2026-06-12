@@ -1,10 +1,38 @@
 define(['jquery', './security', './config', './data-format'], function($, security, config, dataFormat) {
   'use strict';
 
-  // Get the API URL from config
-  const ANTHROPIC_API_URL = config.API.URL;
-
   return {
+    /**
+     * Resolve the request URL and headers based on config.
+     * - When config.API.PROXY_URL is set, route through the local proxy (the proxy
+     *   adds the anthropic-version header itself).
+     * - Otherwise call api.anthropic.com directly from the browser, which requires
+     *   the anthropic-version and anthropic-dangerous-direct-browser-access headers.
+     * @param {string} apiKey - The Anthropic API key
+     * @returns {{url: string, headers: object}}
+     */
+    buildTransport: function(apiKey) {
+      const proxyUrl = config.API.PROXY_URL;
+      if (proxyUrl) {
+        return {
+          url: proxyUrl,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey
+          }
+        };
+      }
+      return {
+        url: config.API.URL,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': config.API.VERSION,
+          'anthropic-dangerous-direct-browser-access': 'true'
+        }
+      };
+    },
+
     /**
      * Send data to Anthropic API via proxy
      * @param {string} appId - The Qlik app ID
@@ -16,9 +44,9 @@ define(['jquery', './security', './config', './data-format'], function($, securi
       console.log("[DEBUG] Anthropic API called with appId:", appId);
     
       try {
-        // Get the API key
-        const apiKey = security.getAPIKey(appId);
-        
+        // Get the API key (shared across all apps)
+        const apiKey = security.getAPIKey();
+
         if (!apiKey) {
           console.error("[DEBUG] API KEY ERROR: No API key found");
           errorCallback('API key not found. Please enter your Anthropic API key in the settings.');
@@ -53,16 +81,15 @@ define(['jquery', './security', './config', './data-format'], function($, securi
           console.warn("[DEBUG] WARNING: Very large payload size:", payloadSize, "bytes");
         }
     
-        console.log("[DEBUG] Sending request to proxy at:", ANTHROPIC_API_URL);
-    
-        // Make the API call through the proxy
+        // Resolve URL + headers (direct browser call, or proxy if configured)
+        const transport = this.buildTransport(apiKey);
+        console.log("[DEBUG] Sending request to:", transport.url);
+
+        // Make the API call
         $.ajax({
-          url: ANTHROPIC_API_URL,
+          url: transport.url,
           type: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-          },
+          headers: transport.headers,
           data: payloadString,
           timeout: config.API.TIMEOUT,
           success: function(response) {
@@ -480,22 +507,22 @@ define(['jquery', './security', './config', './data-format'], function($, securi
       };
       
       try {
-        // Get API key
-        const apiKey = security.getAPIKey(appId);
-        
+        // Get API key (shared across all apps)
+        const apiKey = security.getAPIKey();
+
         if (!apiKey) {
           errorCallback('API key not found. Please enter your Anthropic API key in the settings.');
           return;
         }
-        
+
+        // Resolve URL + headers (direct browser call, or proxy if configured)
+        const transport = this.buildTransport(apiKey);
+
         // Send test request
         $.ajax({
-          url: ANTHROPIC_API_URL,
+          url: transport.url,
           type: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-          },
+          headers: transport.headers,
           data: JSON.stringify(testPayload),
           success: function(response) {
             successCallback(response);

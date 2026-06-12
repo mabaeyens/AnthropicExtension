@@ -4,51 +4,72 @@ Qlik Sense visualization extension that analyses chart data using the Anthropic 
 
 ## Description
 
-Adds an AI panel to any Qlik Sense dashboard. The user selects a visualization, asks a question in natural language and receives a Claude-generated analysis of the chart data.
+Adds an AI panel to any Qlik Sense dashboard. The user selects a visualization, asks a question in natural language and receives a Claude-generated analysis of the chart data. On the first request, the extension also sends the app's data-model structure (field names and master items) so Claude can interpret the chart in context.
 
-The extension communicates with Anthropic through a **local Node.js proxy** ([cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)) listening at `localhost:3000`. This proxy is required because Qlik Sense on Windows runs in a browser, and browsers block direct calls to `api.anthropic.com` due to CORS restrictions.
+By default the extension calls `https://api.anthropic.com/v1/messages` **directly from the browser** using Anthropic's `anthropic-dangerous-direct-browser-access` header — **no proxy required**. For this to work in Qlik Sense Enterprise, an administrator adds `api.anthropic.com` to the QMC Content Security Policy once (see Installation).
+
+Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)) by setting a **Proxy URL** in the extension properties — useful if your organization prefers to keep the API key server-side.
 
 ## Requirements
 
 - Qlik Sense Desktop (Windows) or Qlik Sense Enterprise ≥ 3.0
-- Anthropic API key
-- Node.js proxy running at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
+- Anthropic API key (this is the **only** thing an end user configures)
+- For the direct (default) mode on Enterprise: a one-time QMC Content Security Policy entry for `api.anthropic.com` (admin step)
+- For the optional proxy mode only: a Node.js proxy at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
 
 ## Installation
 
 1. Copy the repository folder into the Qlik Sense extensions directory:
    - **Desktop**: `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\`
    - **Enterprise**: QMC console → Extensions → Import
-2. Reload Qlik Sense
-3. The extension will appear in the assets panel as **"Anthropic AI Assistant"**
+2. **(Enterprise, direct mode only)** In the QMC, open **Content Security Policy** and add an entry
+   allowing `api.anthropic.com` on the `connect-src` directive, then restart the proxy/engine service.
+   This is a one-time admin step. (Skip if you use the optional Proxy URL instead.)
+3. Reload Qlik Sense
+4. The extension will appear in the assets panel as **"Anthropic AI Assistant"**
 
 ## Configuration
 
-Edit `js/config.js` to adjust:
+End users only enter an **API key**. The following are exposed in the extension's properties panel
+(no code editing required):
+
+| Property | Default | Description |
+|---|---|---|
+| API Key | — | Your Anthropic API key (stored encrypted in `localStorage`, shared across apps) |
+| Model | `claude-haiku-4-5` | Claude model: Haiku 4.5, Sonnet 4.6, or Opus 4.8 |
+| Proxy URL | _(blank)_ | Leave blank to call the API directly; set it to route through a local proxy |
+
+Advanced defaults can still be tuned in `js/config.js`:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `API.URL` | `https://localhost:3000/api/anthropic` | Local proxy URL |
-| `API.MODEL` | `claude-3-haiku-20240307` | Claude model |
+| `API.URL` | `https://api.anthropic.com/v1/messages` | Direct Anthropic endpoint (used when no Proxy URL is set) |
+| `API.VERSION` | `2023-06-01` | `anthropic-version` header for direct calls |
+| `API.MODEL` | `claude-haiku-4-5` | Default Claude model |
 | `API.MAX_TOKENS` | `4000` | Maximum tokens in the response |
 | `DATA.MAX_ROWS` | `1000` | Maximum rows sent to the LLM |
-| `DEBUG_MODE` | `true` | Enable/disable console logs |
+| `DEBUG_MODE` | `false` | Enable/disable console logs |
 
-## Required proxy
+## Optional proxy
 
-The extension does not call the Anthropic API directly. It requires the **[cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)** Node.js server, which:
+By default the extension calls `https://api.anthropic.com/v1/messages` directly from the browser
+(sending the `anthropic-version` and `anthropic-dangerous-direct-browser-access` headers). No proxy
+is needed.
 
-- Listens at `https://localhost:3000/api/anthropic`
+If you prefer to keep the API key off the browser, set a **Proxy URL** in the extension properties
+and run the **[cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)** Node.js server (or any proxy)
+that:
+
+- Listens at your Proxy URL (e.g. `https://localhost:3000/api/anthropic`)
 - Accepts POST requests with the `x-api-key` header (Anthropic key)
 - Forwards them to `https://api.anthropic.com/v1/messages`
 
 ## Usage
 
-1. Make sure the Node.js proxy is running
-2. Open a dashboard in Qlik Sense
-3. Drag the **"Anthropic AI Assistant"** extension onto a sheet
-4. Enter your Anthropic API key in the properties panel
-5. Click **"Select chart"**, choose a visualization and type your question
+1. Open a dashboard in Qlik Sense
+2. Drag the **"Anthropic AI Assistant"** extension onto a sheet
+3. Enter your Anthropic API key in the properties panel (optionally pick a Model)
+4. Click **"Select Chart"**, choose a visualization and type your question
 
 ## Structure
 
@@ -63,30 +84,34 @@ AnthropicExtension/
 │   └── template.html
 └── js/
     ├── config.js            # Central configuration
-    ├── main.js              # Extension initialization
-    ├── anthropic-api.js     # API client (via proxy)
-    ├── data-collector.js    # Data extraction from Qlik visualizations
+    ├── main.js              # Extension initialization + properties panel
+    ├── anthropic-api.js     # API client (direct or via proxy)
+    ├── data-collector.js    # Data extraction from Qlik visualizations + app context
     ├── data-format.js       # Data formatting for the LLM
     ├── ui-controller.js     # UI management
-    ├── security.js          # Secure API key management (encrypted localStorage)
+    ├── template.js          # Inlined panel markup (loaded with the bundle)
+    ├── security.js          # API key management (CryptoJS AES, shared key)
     └── lib/
-        └── crypto-js.min.js # CryptoJS v4 — bundled, no npm install required
+        └── crypto-js.min.js # CryptoJS 4.2.0 — bundled, no npm install required
 ```
 
 ## Status
 
 - [x] Data extraction from charts (bar, line, combo, map)
-- [x] Analysis with Claude via proxy
-- [x] Encrypted API key storage per Qlik app
-- [x] Proxy server available at [mabaeyens/cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
-- [ ] Qlik Cloud support (without proxy)
+- [x] Analysis with Claude (direct browser call by default; optional proxy)
+- [x] Data-model structure (fields + master items) sent on first use
+- [x] Encrypted API key storage (CryptoJS AES), shared across Qlik apps
+- [ ] Qlik Cloud support (untested)
 
 ## Notes
 
 - Compatible with **Qlik Sense on Windows** (Desktop and Enterprise); not tested on Qlik Cloud
-- The API key is stored encrypted in `localStorage`, scoped to the Qlik app ID
+- The API key is encrypted with CryptoJS AES before being written to `localStorage` and is reused
+  across all Qlik apps. The encryption passphrase is bundled in the extension, so this is
+  **obfuscation, not strong secrecy** — appropriate for on-prem internal deployments where the goal
+  is to keep the key out of plain sight, not to defend against a determined local attacker.
 - `crypto-js.min.js` is bundled in the repo; no `npm install` required
-- To change the Claude model, edit `API.MODEL` in `js/config.js`
+- Model and Proxy URL are set in the extension properties panel; deeper defaults live in `js/config.js`
 
 ## 🛠️ Development Workflow: Human-AI Collaboration
 

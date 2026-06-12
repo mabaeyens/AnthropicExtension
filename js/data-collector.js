@@ -1124,6 +1124,26 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       });
     },
 
+    // Cache for the app context (data model / fields / master items). Collected
+    // once per session so the data-model structure is sent to the LLM on first
+    // use without re-evaluating the engine on every request.
+    _appContextCache: null,
+
+    /**
+     * Get the app context, collected once per session and cached thereafter.
+     * @returns {Promise} Promise resolving to the app context object
+     */
+    getAppContextCached: function() {
+      if (this._appContextCache) {
+        return Promise.resolve(this._appContextCache);
+      }
+      const self = this;
+      return this.getAppContext().then(function(context) {
+        self._appContextCache = context;
+        return context;
+      });
+    },
+
     /**
      * Extract data from a hypercube or other Qlik Sense object
      * @param {object} objectData - The object data

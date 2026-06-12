@@ -33,13 +33,32 @@ define([
           items: {
             apiKeySettings: {
               type: "items",
-              label: "Anthropic API Settings",
+              label: "Anthropic AI Settings",
               items: {
                 apiKey: {
                   ref: "props.apiKey",
-                  label: "API Key (stored for this session)",
+                  label: "API Key",
                   type: "string",
                   expression: "optional"
+                },
+                model: {
+                  ref: "props.model",
+                  label: "Model",
+                  type: "string",
+                  component: "dropdown",
+                  options: [
+                    { value: "claude-haiku-4-5", label: "Haiku 4.5 (fast, low cost)" },
+                    { value: "claude-sonnet-4-6", label: "Sonnet 4.6 (balanced)" },
+                    { value: "claude-opus-4-8", label: "Opus 4.8 (most capable)" }
+                  ],
+                  defaultValue: config.API.MODEL
+                },
+                proxyUrl: {
+                  ref: "props.proxyUrl",
+                  label: "Proxy URL (optional — leave blank to call the API directly)",
+                  type: "string",
+                  expression: "optional",
+                  defaultValue: ""
                 }
               }
             }
@@ -48,32 +67,36 @@ define([
       }
     },
     paint: function ($element, layout) {
-      console.log("AnthropicExtension paint method called");
+      // Apply per-instance config overrides from the properties panel. Cheap, so it
+      // runs on every paint to pick up property changes (model / proxy URL).
+      if (layout.props) {
+        if (layout.props.model) {
+          config.API.MODEL = layout.props.model;
+        }
+        config.API.PROXY_URL = layout.props.proxyUrl || '';
 
-      // Initialize UI
-      uiController.initUI($element, layout);
-
-      // Get the app context
-      const app = qlik.currApp();
-      const appId = app.id;
-
-      // Check if API key is already stored
-      const storedApiKey = security.getAPIKey(appId);
-
-      // Store API key securely if provided in properties and not already stored
-      if (!storedApiKey && layout.props && layout.props.apiKey) {
-        security.storeAPIKey(appId, layout.props.apiKey);
-        console.log("[DEBUG] API key stored in localStorage from properties");
+        // Persist a key entered via the properties panel, if not already stored.
+        if (layout.props.apiKey && !security.getAPIKey()) {
+          security.storeAPIKey(layout.props.apiKey);
+          console.log("[DEBUG] API key stored from properties");
+        }
       }
 
-      // Initialize the data collector with the current app and our own object ID
-      dataCollector.init(app, layout.qInfo.qId);
+      // One-time initialization per extension instance. Qlik calls paint() on every
+      // property change / selection event; rebuilding the DOM and re-attaching event
+      // handlers each time loses panel state and leaks listeners.
+      if (!$element.data('anthropicInitialized')) {
+        $element.data('anthropicInitialized', true);
 
-      // Set up visualization selection tracking
-      dataCollector.setupSelectionTracking(function (objectId, objectData) {
-        console.log("Visualization selected:", objectId);
-        uiController.updateSelectedVisualization(objectId, objectData);
-      });
+        uiController.initUI($element, layout);
+
+        const app = qlik.currApp();
+        dataCollector.init(app, layout.qInfo.qId);
+        dataCollector.setupSelectionTracking(function (objectId, objectData) {
+          console.log("Visualization selected:", objectId);
+          uiController.updateSelectedVisualization(objectId, objectData);
+        });
+      }
 
       return qlik.Promise.resolve();
     },
