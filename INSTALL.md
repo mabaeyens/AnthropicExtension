@@ -52,6 +52,10 @@ not required (but the proxy must be reachable from the browser).
 
 ---
 
+## How it works
+For the end-to-end data flow (User → Qlik Sense → Anthropic → back), transport selection (direct vs
+proxy), and key storage, see [`diagrams.md`](./diagrams.md).
+
 ## Troubleshooting
 - **No response / network error in direct mode (Enterprise):** the CSP `connect-src` entry for
   `api.anthropic.com` is missing — see §1, step 2.

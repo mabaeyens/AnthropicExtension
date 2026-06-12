@@ -6,6 +6,14 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [Unreleased]
+
+### Documentation
+- Added `diagrams.md` with Mermaid sequence, component, key-storage, and transport-decision diagrams
+  (User → Qlik Sense → Anthropic → back).
+- Updated `README.md`, `INSTALL.md`, and `CLAUDE.md` to match the current direct/proxy flows,
+  first-use app context, and encrypted shared-key storage.
+
 ## [0.2.0] - 2026-06-12
 
 First public demo build. The previous internal build required a separate local Node.js proxy and

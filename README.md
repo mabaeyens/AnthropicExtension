@@ -2,6 +2,11 @@
 
 Qlik Sense visualization extension that analyses chart data using the Anthropic API (Claude).
 
+> ⚠️ **Experimental / demo build (v0.2.0).** Not hardened for production. In the default mode the
+> Anthropic API key is sent from the browser directly to `api.anthropic.com` and is only obfuscated
+> in `localStorage`. See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), and
+> [`diagrams.md`](./diagrams.md).
+
 ## Description
 
 Adds an AI panel to any Qlik Sense dashboard. The user selects a visualization, asks a question in natural language and receives a Claude-generated analysis of the chart data. On the first request, the extension also sends the app's data-model structure (field names and master items) so Claude can interpret the chart in context.
@@ -71,17 +76,41 @@ that:
 3. Enter your Anthropic API key in the properties panel (optionally pick a Model)
 4. Click **"Select Chart"**, choose a visualization and type your question
 
+## Architecture & data flow
+
+The request path (User → Qlik Sense → Anthropic → back) is:
+
+1. **Select** — clicking a chart is detected via its `qv-object-<id>` DOM class; `data-collector.js`
+   pulls the object's hypercube (dimensions, measures, rows) and `data-format.js` trims it to a token
+   budget.
+2. **Context (first use)** — `data-collector.getAppContextCached()` collects the data model (field
+   names + master items) **once per session** and caches it.
+3. **Assemble** — `ui-controller.js` builds `{ userPrompt, chartData, context, systemPrompt }`.
+4. **Send** — `anthropic-api.js` decrypts the key (`security.js`), formats the message, and chooses
+   the transport with `buildTransport()`:
+   - **Direct (default):** `POST https://api.anthropic.com/v1/messages` with `x-api-key`,
+     `anthropic-version`, and `anthropic-dangerous-direct-browser-access: true`.
+   - **Proxy (optional):** `POST <Proxy URL>` with `x-api-key`; the proxy forwards to Anthropic.
+5. **Render** — Claude's reply is formatted by `formatting.js` and shown in the panel.
+
+See [`diagrams.md`](./diagrams.md) for sequence, component, key-storage, and transport-decision
+diagrams (rendered with Mermaid on GitHub).
+
 ## Structure
 
 ```
 AnthropicExtension/
 ├── AnthropicExtension.js    # Entry point (Qlik RequireJS)
-├── AnthropicExtension.qext  # Extension metadata
+├── AnthropicExtension.qext  # Extension metadata (version, name)
+├── README.md                # This file
+├── CHANGELOG.md             # Release notes
+├── INSTALL.md               # Deployment / run instructions
+├── diagrams.md              # Data-flow & sequence diagrams (Mermaid)
 ├── icon.png
 ├── css/
 │   └── style.css
 ├── html/
-│   └── template.html
+│   └── template.html        # Reference copy (panel markup is inlined in js/template.js)
 └── js/
     ├── config.js            # Central configuration
     ├── main.js              # Extension initialization + properties panel
