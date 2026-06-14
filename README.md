@@ -5,7 +5,7 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 
 > ## ⚠️ Demo only — no warranty, no liability
 >
-> This is an **experimental demonstration asset (v0.3.0)**, not a product. It is **not** hardened for
+> This is an **experimental demonstration asset (v0.3.1)**, not a product. It is **not** hardened for
 > production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
 > accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
 > customer, production, or other environment. **Use entirely at your own risk.**

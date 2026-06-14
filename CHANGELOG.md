@@ -6,6 +6,33 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [0.3.1] - 2026-06-14
+
+Security & robustness hardening from a deep audit of the 0.3.0 code. No new features.
+
+### Security
+- **Output sanitization (XSS fix):** the LLM response is rendered to HTML via the bundled
+  `marked` parser, which does **not** sanitize. A malicious or tampered reply containing raw
+  HTML (`<img onerror=…>`, `<script>`, …) could execute in the Qlik session. Now the parsed
+  HTML is run through **DOMPurify** (newly bundled) before injection, and the renderer **fails
+  closed** (escapes) if DOMPurify is unavailable. Error/loading/warning messages now escape all
+  interpolated values.
+
+### Fixed
+- **Browser hang on large tables:** full-hypercube retrieval previously fired *all* pages at
+  once with no pre-fetch bound, which could spawn hundreds–thousands of concurrent engine
+  requests and freeze the tab. Fetching is now **hard-capped** (`DATA.MAX_FETCH_CELLS`) and
+  **batched** (limited concurrency); oversized tables are **truncated with a notice** ("only the
+  first N of M rows will be analyzed").
+- **Memory leaks:** current-selections now uses a one-shot session object instead of a
+  never-released `getList` subscription; chart **preview visualizations are closed** when the
+  conversation is cleared; the conversation **history sent per request is bounded**
+  (`CHAT.HISTORY_MAX`); panel drag listeners are attached only while dragging.
+
+### Documentation
+- Fixed a Mermaid render error in `diagrams.md` (sequence diagram). Repo no longer tracks
+  `CLAUDE.md` / `.claude/` (kept locally).
+
 ## [0.3.0] - 2026-06-14
 
 Conversation, charting, and data-fidelity release. The assistant becomes a persistent,
@@ -112,5 +139,6 @@ runnable with **only an API key**.
 - The encryption passphrase is bundled in the extension, so key storage is obfuscation, not strong
   secrecy — appropriate for on-prem internal demos only.
 
+[0.3.1]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.1
 [0.3.0]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.2.0
