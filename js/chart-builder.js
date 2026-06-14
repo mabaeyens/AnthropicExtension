@@ -29,6 +29,52 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     if (i !== -1) openPreviews.splice(i, 1);
   }
 
+  // Master-item lookup (name/label -> library id), populated from the app
+  // context. Used so the AI's chart specs resolve to real master items.
+  var masterDimIdx = { exact: {}, lower: {} };
+  var masterMeasIdx = { exact: {}, lower: {} };
+
+  function indexItems(list) {
+    var idx = { exact: {}, lower: {} };
+    (list || []).forEach(function (it) {
+      if (it && it.name && it.id) {
+        idx.exact[it.name] = it.id;
+        idx.lower[String(it.name).toLowerCase()] = it.id;
+      }
+    });
+    return idx;
+  }
+  function lookupId(idx, name) {
+    if (!name || !idx) return null;
+    return idx.exact[name] || idx.lower[String(name).toLowerCase()] || null;
+  }
+  // Strip one pair of surrounding [brackets]: "[€ Sales]" -> "€ Sales".
+  function unbracket(s) {
+    s = String(s == null ? '' : s).trim();
+    var m = s.match(/^\[(.*)\]$/);
+    return m ? m[1] : s;
+  }
+
+  // Resolve a dimension token to a column definition.
+  // Order: master dimension (preferred, even if a field shares the name) ->
+  // calculated dimension (=expr) -> plain field name.
+  function resolveDimension(d) {
+    var name = unbracket(d);
+    var id = lookupId(masterDimIdx, name);
+    if (id) return { qLibraryId: id };
+    if (/^\s*=/.test(d)) return { qDef: { qFieldDefs: [d] } };
+    return name; // field name (unbracketed) -> dimension
+  }
+  // Resolve a measure token. Master measures are referenced by their bracketed
+  // label (e.g. [€ Sales]) — never wrapped in an aggregation. Order: master
+  // measure (preferred) -> expression string (ensure leading "=").
+  function resolveMeasure(m) {
+    var name = unbracket(m);
+    var id = lookupId(masterMeasIdx, name);
+    if (id) return { qLibraryId: id };
+    return /^\s*=/.test(m) ? m : '=' + m; // "[€ Sales]"->"=[€ Sales]"; "Sum(Sales)"->"=Sum(Sales)"
+  }
+
   function escapeHtml(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -62,14 +108,19 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
         '{\n' +
         '  "type": "barchart",\n' +
         '  "title": "Short chart title",\n' +
-        '  "dimensions": ["[Field Name]"],\n' +
-        '  "measures": ["=Sum([Sales])"]\n' +
+        '  "dimensions": ["Category"],\n' +
+        '  "measures": ["[€ Sales]"]\n' +
         '}\n' +
         '```\n' +
         'Rules: prefer one of these types — ' + SUGGESTED_TYPES.join(', ') + '. ' +
-        'Do NOT use map charts. Use ONLY field names and master items that exist in ' +
-        'the app context; wrap field names with spaces in [brackets]. Measures must be ' +
-        'valid Qlik expressions starting with "=". For a histogram, supply a single ' +
+        'Do NOT use map charts. ' +
+        'PREFER the app\'s MASTER ITEMS when they exist: put a master dimension\'s name in ' +
+        '"dimensions", and reference a master measure by its label in square brackets in ' +
+        '"measures" (e.g. "[€ Sales]") — NEVER wrap a master measure in another aggregation ' +
+        '(do not write "Sum([€ Sales])"). ' +
+        'If no suitable master item exists, use a real FIELD name for a dimension and an ' +
+        'aggregation expression over raw fields for a measure (e.g. "=Sum(Sales)"). ' +
+        'Use only names that appear in the app context. For a histogram, supply a single ' +
         'numeric dimension and no measure. Output nothing except the code block.';
     },
 
@@ -116,14 +167,28 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     },
 
     /**
-     * Columns array for visualization.create. Histogram takes a single
+     * Register the app's master items (from the data-model context) so chart
+     * specs can be resolved to real master dimensions/measures by library id.
+     */
+    setMasterItems: function (dimensions, measures) {
+      masterDimIdx = indexItems(dimensions);
+      masterMeasIdx = indexItems(measures);
+    },
+
+    /**
+     * Build the columns array for visualization.create, resolving each token to
+     * a master item (by id) when one exists, otherwise a field name (dimensions)
+     * or an aggregation expression (measures). Histogram takes a single
      * dimension and computes frequency itself, so measures are dropped.
      */
     columnsFor: function (spec) {
       if (spec.type === 'histogram') {
-        return (spec.dimensions || []).slice(0, 1);
+        return (spec.dimensions || []).slice(0, 1).map(resolveDimension);
       }
-      return (spec.dimensions || []).concat(spec.measures || []);
+      var cols = [];
+      (spec.dimensions || []).forEach(function (d) { cols.push(resolveDimension(d)); });
+      (spec.measures || []).forEach(function (m) { cols.push(resolveMeasure(m)); });
+      return cols;
     },
 
     /**

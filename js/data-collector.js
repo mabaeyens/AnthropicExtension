@@ -1279,6 +1279,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           appContext.masterDimensions = ((layout.qDimensionList && layout.qDimensionList.qItems) || [])
             .map(function(i) {
               return {
+                id: (i.qInfo && i.qInfo.qId) || "",
                 name: (i.qMeta && i.qMeta.title) || (i.qData && i.qData.title) || "Unnamed",
                 fields: (i.qData && i.qData.defs) || []
               };
@@ -1287,6 +1288,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           appContext.masterMeasures = ((layout.qMeasureList && layout.qMeasureList.qItems) || [])
             .map(function(i) {
               return {
+                id: (i.qInfo && i.qInfo.qId) || "",
                 name: (i.qMeta && i.qMeta.title) || (i.qData && i.qData.title) || "Unnamed",
                 expr: (i.qData && i.qData.def) || ""
               };

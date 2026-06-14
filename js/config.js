@@ -17,7 +17,7 @@ define([], function() {
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
     VERSION: '0.3.1',
-    BUILD: 19,
+    BUILD: 20,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -37,7 +37,15 @@ define([], function() {
       MODELS: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
       MAX_TOKENS: 4000,
       SYSTEM_PROMPT: 'You are a business analyst and expert Qlik Sense user. Be concise. Always aggregate the data and show absolute values and percentages. Focus on insights that would help business decision making. Present your analysis in a structured format with bullet points for key findings.',
-      TIMEOUT: 60000
+      TIMEOUT: 60000,
+      // Approximate context window (input+output tokens) used to warn before a
+      // request would exceed the selected model's limit. Per-model with a fallback.
+      CONTEXT_WINDOW: 200000,
+      CONTEXT_WINDOWS: {
+        'claude-haiku-4-5': 200000,
+        'claude-sonnet-4-6': 200000,
+        'claude-opus-4-8': 200000
+      }
     },
     
     // Data Collection Settings

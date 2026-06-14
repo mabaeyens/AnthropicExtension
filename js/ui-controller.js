@@ -54,6 +54,67 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
       return trimmed;
     }
 
+    // ── Model context-window guard ────────────────────────────────────────────
+    // Estimate the request size (~4 chars/token) and compare against the selected
+    // model's context window. If it won't fit, the user chooses to truncate the
+    // data to fit or cancel and refine selections.
+
+    function modelWindow() {
+      var m = config.API.MODEL;
+      return (config.API.CONTEXT_WINDOWS && config.API.CONTEXT_WINDOWS[m]) ||
+        config.API.CONTEXT_WINDOW || 200000;
+    }
+    function inputBudget() {
+      // Reserve room for the response + a safety margin.
+      return Math.max(4000, modelWindow() - (config.API.MAX_TOKENS || 4000) - 4000);
+    }
+    function estimateTokens(chartDataPayload) {
+      var chars = 2000; // system prompt + question + formatting overhead
+      if (chartDataPayload) { try { chars += JSON.stringify(chartDataPayload).length; } catch (e) {} }
+      boundedHistory().forEach(function (m) { chars += (m && m.content ? m.content.length : 0); });
+      return Math.ceil(chars / 4);
+    }
+    // Clone the payload and trim chart rows until it fits the budget.
+    function truncateToFit(payload, budget) {
+      if (!payload) return { payload: payload, changed: false };
+      var clone = payload.map(function (c) {
+        var d = (c && typeof c === 'object') ? Object.assign({}, c) : c;
+        if (c && Array.isArray(c.data)) d.data = c.data.slice();
+        return d;
+      });
+      var changed = false, guard = 0;
+      while (estimateTokens(clone) > budget && guard < 100) {
+        var trimmed = false;
+        clone.forEach(function (c) {
+          if (c && Array.isArray(c.data) && c.data.length > 5) {
+            var keep = Math.max(5, Math.floor(c.data.length * 0.8));
+            if (keep < c.data.length) { c.data = c.data.slice(0, keep); changed = true; trimmed = true; }
+          }
+        });
+        if (!trimmed) break;
+        guard++;
+      }
+      return { payload: clone, changed: changed };
+    }
+    // Returns { ok, chartData, truncated }. ok=false means the user cancelled.
+    function guardPayload(chartDataPayload) {
+      var budget = inputBudget();
+      var est = estimateTokens(chartDataPayload);
+      if (est > budget) {
+        var ok = window.confirm(
+          'This request is about ' + est.toLocaleString() + ' tokens, which exceeds the ' +
+          config.API.MODEL + ' context window (~' + modelWindow().toLocaleString() + ' tokens).\n\n' +
+          'OK — truncate the chart data to fit and send.\n' +
+          'Cancel — stop, so you can filter the data with selections and try again.');
+        if (!ok) return { ok: false };
+        var res = truncateToFit(chartDataPayload, budget);
+        return { ok: true, chartData: res.payload, truncated: res.changed };
+      }
+      // Under the model limit — keep the lighter egress-size heads-up.
+      if (!confirmLargePayload(chartDataPayload)) return { ok: false };
+      return { ok: true, chartData: chartDataPayload, truncated: false };
+    }
+
     // Clipboard fallback for non-secure contexts where navigator.clipboard is
     // unavailable. Copies via a hidden textarea + execCommand.
     function fallbackCopy(text) {
@@ -240,6 +301,12 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         $('#anthropic-version-info').text('v' + config.VERSION + ' · build ' + config.BUILD +
           (config.AUTHOR ? ' · by ' + config.AUTHOR : ''));
 
+        // Warm the master-item lookup so chart specs resolve to real master
+        // dimensions/measures even if "Include app context" is off.
+        dataCollector.getAppContextCached().then(function(ctx) {
+          if (ctx) chartBuilder.setMasterItems(ctx.masterDimensions, ctx.masterMeasures);
+        }).catch(function() { /* ignore — resolution falls back to field names */ });
+
         this.setupEventHandlers();
         console.log('UI initialized — floating widget injected into body');
       },
@@ -366,13 +433,20 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             chartDataPayload = selectedCharts.map(function(c) { return c.data; });
           }
 
-          // Warn before sending a very large amount of data to the LLM.
-          if (!confirmLargePayload(chartDataPayload)) return;
+          // Guard against exceeding the model's context window (and warn on large
+          // egress). Cancel aborts before anything is added to the thread.
+          var guard = guardPayload(chartDataPayload);
+          if (!guard.ok) return;
+          chartDataPayload = guard.chartData;
 
           // Show the user's question and a temporary "thinking" bubble, clear input
           self.appendUserMessage(userPrompt);
           var $thinking = self.appendThinkingMessage('Thinking…');
           $container.find('#anthropic-prompt').val('');
+          if (guard.truncated) {
+            self.appendSystemNote(formatting.formatWarningMessage(
+              'Chart data was truncated to fit the ' + config.API.MODEL + ' context window.'));
+          }
 
           // Determine system prompt
           var systemPrompt = null;
@@ -398,6 +472,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
               requestData.context = context;
+              chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processAnthropicRequest(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
               self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
@@ -419,8 +494,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             chartDataPayload = selectedCharts.map(function(c) { return c.data; });
           }
 
-          // Warn before sending a very large amount of data to the LLM.
-          if (!confirmLargePayload(chartDataPayload)) return;
+          // Guard against exceeding the model's context window (and warn on large
+          // egress). Cancel aborts before anything is added to the thread.
+          var guard = guardPayload(chartDataPayload);
+          if (!guard.ok) return;
+          chartDataPayload = guard.chartData;
 
           var displayText = (typed && typed.trim())
             ? typed.trim()
@@ -428,6 +506,10 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           self.appendUserMessage(displayText);
           var $thinking = self.appendThinkingMessage('Designing a chart…');
           $container.find('#anthropic-prompt').val('');
+          if (guard.truncated) {
+            self.appendSystemNote(formatting.formatWarningMessage(
+              'Chart data was truncated to fit the ' + config.API.MODEL + ' context window.'));
+          }
 
           // Follow up on the most recent assistant response (if any) so the
           // suggestion builds on the prior analysis, in addition to any prompt.
@@ -457,6 +539,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
               requestData.context = context;
+              chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processChartSuggestion(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
               self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
