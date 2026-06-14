@@ -29,24 +29,39 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     if (i !== -1) openPreviews.splice(i, 1);
   }
 
-  // Master-item lookup (name/label -> library id), populated from the app
-  // context. Used so the AI's chart specs resolve to real master items.
-  var masterDimIdx = { exact: {}, lower: {} };
-  var masterMeasIdx = { exact: {}, lower: {} };
+  // Master-item lookup populated from the app context. We resolve a master item
+  // to its UNDERLYING field(s)/expression (as a string) rather than a
+  // {qLibraryId} object, because visualization.create accepts plain
+  // field-name / "=expression" strings reliably across engine versions, whereas
+  // a {qLibraryId} column was rejected with "QdefOrQlibraryid".
+  var masterDims = { exact: {}, lower: {} };   // name -> qFieldDefs[]
+  var masterMeas = { exact: {}, lower: {} };   // name -> expression
 
-  function indexItems(list) {
+  function indexDims(list) {
     var idx = { exact: {}, lower: {} };
     (list || []).forEach(function (it) {
-      if (it && it.name && it.id) {
-        idx.exact[it.name] = it.id;
-        idx.lower[String(it.name).toLowerCase()] = it.id;
+      if (it && it.name && Array.isArray(it.fields) && it.fields.length) {
+        idx.exact[it.name] = it.fields;
+        idx.lower[String(it.name).toLowerCase()] = it.fields;
       }
     });
     return idx;
   }
-  function lookupId(idx, name) {
+  function indexMeas(list) {
+    var idx = { exact: {}, lower: {} };
+    (list || []).forEach(function (it) {
+      if (it && it.name && it.expr) {
+        idx.exact[it.name] = it.expr;
+        idx.lower[String(it.name).toLowerCase()] = it.expr;
+      }
+    });
+    return idx;
+  }
+  function lookup(idx, name) {
     if (!name || !idx) return null;
-    return idx.exact[name] || idx.lower[String(name).toLowerCase()] || null;
+    if (Object.prototype.hasOwnProperty.call(idx.exact, name)) return idx.exact[name];
+    var k = String(name).toLowerCase();
+    return Object.prototype.hasOwnProperty.call(idx.lower, k) ? idx.lower[k] : null;
   }
   // Strip one pair of surrounding [brackets]: "[€ Sales]" -> "€ Sales".
   function unbracket(s) {
@@ -55,24 +70,26 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     return m ? m[1] : s;
   }
 
-  // Resolve a dimension token to a column definition.
-  // Order: master dimension (preferred, even if a field shares the name) ->
-  // calculated dimension (=expr) -> plain field name.
+  // Resolve a dimension token to a field-name / expression STRING.
+  // Order: master dimension's underlying field (preferred, even if a field
+  // shares the name) -> calculated dimension (=expr) -> plain field name.
   function resolveDimension(d) {
     var name = unbracket(d);
-    var id = lookupId(masterDimIdx, name);
-    if (id) return { qLibraryId: id };
-    if (/^\s*=/.test(d)) return { qDef: { qFieldDefs: [d] } };
-    return name; // field name (unbracketed) -> dimension
+    var fields = lookup(masterDims, name);
+    if (fields && fields.length) {
+      var f = String(fields[0]);
+      return /^\s*=/.test(f) ? f : unbracket(f);
+    }
+    return /^\s*=/.test(d) ? d : unbracket(d);
   }
-  // Resolve a measure token. Master measures are referenced by their bracketed
-  // label (e.g. [€ Sales]) — never wrapped in an aggregation. Order: master
-  // measure (preferred) -> expression string (ensure leading "=").
+  // Resolve a measure token to an "=expression" STRING. Master measures resolve
+  // to their underlying aggregation expression (so [€ Sales] -> =Sum(Sales));
+  // otherwise the token is used as an expression (leading "=" ensured).
   function resolveMeasure(m) {
     var name = unbracket(m);
-    var id = lookupId(masterMeasIdx, name);
-    if (id) return { qLibraryId: id };
-    return /^\s*=/.test(m) ? m : '=' + m; // "[€ Sales]"->"=[€ Sales]"; "Sum(Sales)"->"=Sum(Sales)"
+    var expr = lookup(masterMeas, name);
+    if (expr) return /^\s*=/.test(expr) ? expr : '=' + expr;
+    return /^\s*=/.test(m) ? m : '=' + m;
   }
 
   function escapeHtml(value) {
@@ -171,8 +188,8 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
      * specs can be resolved to real master dimensions/measures by library id.
      */
     setMasterItems: function (dimensions, measures) {
-      masterDimIdx = indexItems(dimensions);
-      masterMeasIdx = indexItems(measures);
+      masterDims = indexDims(dimensions);
+      masterMeas = indexMeas(measures);
     },
 
     /**

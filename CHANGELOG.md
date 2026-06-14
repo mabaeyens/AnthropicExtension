@@ -6,6 +6,20 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [0.3.3] - 2026-06-14
+
+### Fixed
+- **Suggested charts now render with data.** Master items were passed to
+  `visualization.create` as `{ qLibraryId }` column objects, which this engine rejected with
+  a `QdefOrQlibraryid` error. Each spec token is now resolved to its **underlying field /
+  expression as a plain string** (master dimension → its field; master measure `[€ Sales]` →
+  its expression `=Sum(Sales)`; otherwise a field name or `=expression`). Charts draw real
+  data instead of erroring or coming up empty.
+
+### Changed
+- Moved **"Include app context"** into **Advanced Options → Data Settings** and relabelled it
+  "Include app context (data model) on first message" to clarify its once-per-chat behaviour.
+
 ## [0.3.2] - 2026-06-14
 
 Chart-creation fixes and a model context-window guard.
@@ -162,6 +176,7 @@ runnable with **only an API key**.
 - The encryption passphrase is bundled in the extension, so key storage is obfuscation, not strong
   secrecy — appropriate for on-prem internal demos only.
 
+[0.3.3]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.3
 [0.3.2]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.2
 [0.3.1]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.1
 [0.3.0]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.0

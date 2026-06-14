@@ -41,15 +41,15 @@ define([], function() {
             <label for="anthropic-prompt">Ask about your data:</label>
             <textarea id="anthropic-prompt" placeholder="Enter your question or prompt"></textarea>
           </div>
-          <div class="context-toggle">
-            <label><input type="checkbox" id="include-context" checked> Include app context</label>
-          </div>
           <div class="optimization-options">
             <details>
               <summary>Advanced Options</summary>
               <div class="optimization-controls">
                 <div class="optimization-section">
                   <h4>Data Settings</h4>
+                  <div class="optimization-row">
+                    <label><input type="checkbox" id="include-context" checked> Include app context (data model) on first message</label>
+                  </div>
                   <div class="optimization-row">
                     <label>Max data rows: <input type="number" id="max-data-rows" value="1000" min="10" max="10000"></label>
                   </div>

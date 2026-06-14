@@ -1,7 +1,7 @@
 # Data Flow & Diagrams
 
 How a question travels **User → Qlik Sense → external LLM → back**, and how a suggested chart is
-created, for the Anthropic AI Assistant extension (v0.3.2). Diagrams use
+created, for the Anthropic AI Assistant extension (v0.3.3). Diagrams use
 [Mermaid](https://mermaid.js.org/) and render automatically on GitHub.
 
 > ⚠️ **Demo only — no warranty, no liability.** Not a Qlik product or supported integration. **Neither

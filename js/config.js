@@ -16,8 +16,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.3.2',
-    BUILD: 21,
+    VERSION: '0.3.3',
+    BUILD: 24,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
