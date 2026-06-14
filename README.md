@@ -5,7 +5,7 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 
 > ## ⚠️ Demo only — no warranty, no liability
 >
-> This is an **experimental demonstration asset (v0.3.1)**, not a product. It is **not** hardened for
+> This is an **experimental demonstration asset (v0.3.2)**, not a product. It is **not** hardened for
 > production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
 > accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
 > customer, production, or other environment. **Use entirely at your own risk.**
@@ -58,8 +58,8 @@ Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-pr
 
 ## Download
 
-**Latest release: [v0.3.1](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.1)** —
-download `AnthropicExtension-v0.3.1.zip` from the
+**Latest release: [v0.3.2](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.2)** —
+download `AnthropicExtension-v0.3.2.zip` from the
 [releases page](https://github.com/mabaeyens/AnthropicExtension/releases). See
 [`CHANGELOG.md`](./CHANGELOG.md) for what changed.
 
@@ -69,7 +69,7 @@ You can either use the packaged release zip or copy the repository folder direct
 
 1. Get the extension into the Qlik Sense extensions directory:
    - **Enterprise (QSEoW)**: in the QMC → **Extensions → Import**, upload
-     `AnthropicExtension-v0.3.1.zip`.
+     `AnthropicExtension-v0.3.2.zip`.
    - **Desktop**: unzip the release into
      `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\` (or copy this repo
      folder there).

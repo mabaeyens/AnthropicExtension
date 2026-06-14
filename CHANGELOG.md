@@ -6,6 +6,29 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [0.3.2] - 2026-06-14
+
+Chart-creation fixes and a model context-window guard.
+
+### Fixed
+- **Suggested charts were empty.** Chart specs referenced master-item display names
+  (e.g. `Category`, `[€ Sales]`), which the engine can't resolve as fields. Each spec token
+  is now resolved to a real **master dimension/measure by library id** when one exists
+  (preferred, even if a field shares the name); otherwise it falls back to a **field name**
+  for dimensions or an **aggregation expression** (e.g. `=Sum(Sales)`) for measures. Master
+  measures are referenced by their bracketed label (`[€ Sales]`), never wrapped in another
+  aggregation. Applies to both the live preview and "Add to sheet".
+
+### Added
+- **Context-window guard.** Before sending, the request size is estimated against the
+  selected model's context window (Haiku 4.5 = 200k tokens). If it won't fit, you're warned
+  and can **truncate the data to fit and send**, or **cancel to refine selections**. The
+  existing ~65 KB egress heads-up still applies below the limit.
+
+### Changed
+- App context now collects master-item **ids** so specs can resolve to real master items;
+  the chart prompt steers the model to prefer master items.
+
 ## [0.3.1] - 2026-06-14
 
 Security & robustness hardening from a deep audit of the 0.3.0 code. No new features.
@@ -139,6 +162,7 @@ runnable with **only an API key**.
 - The encryption passphrase is bundled in the extension, so key storage is obfuscation, not strong
   secrecy — appropriate for on-prem internal demos only.
 
+[0.3.2]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.2
 [0.3.1]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.1
 [0.3.0]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.2.0

@@ -1,4 +1,4 @@
-# Install & Run — Anthropic AI Assistant (v0.3.1)
+# Install & Run — Anthropic AI Assistant (v0.3.2)
 
 > ⚠️ **Demo only — no warranty, no liability.** This is a demonstration asset, **not** a Qlik product
 > and **not** production-hardened. **Neither Qlik nor the author accept any liability** for any issue,
