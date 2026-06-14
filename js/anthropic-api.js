@@ -140,88 +140,62 @@ define(['jquery', './security', './config', './data-format'], function($, securi
         console.log("[DEBUG] Initial metrics:", JSON.stringify(metricReport));
       }
       
-      // Format chart data more efficiently if available
+      // Format chart data more efficiently if available.
+      // data.chartData may be a single object (legacy) or an array (multi-chart).
       let formattedChartData = "";
       if (data.chartData) {
         if (config.DEBUG_MODE) {
           console.log("[DEBUG] Formatting chart data for efficient LLM consumption");
         }
-        
-        // First, get a size baseline of raw chart data
+
         const rawChartDataJson = JSON.stringify(data.chartData);
-        
-        // Check if this is a map visualization
-        const isMapVisualization = data.chartData && 
-                                data.chartData.info && 
-                                data.chartData.info.type && 
-                                data.chartData.info.type.toLowerCase().includes('map');
-        
-        // Special handling for map visualizations
-        if (isMapVisualization) {
-          // Get chart information
-          const chartTitle = data.chartData.info?.title || "Untitled Map";
-          const dimensions = data.chartData.dimensions || [];
-          const measures = data.chartData.measures || [];
-          
-          // Extract any layers information if available
-          let layerInfo = "";
-          if (data.chartData.mapLayers && data.chartData.mapLayers.length > 0) {
-            layerInfo = `\nMap contains ${data.chartData.mapLayers.length} layers.\n`;
-            data.chartData.mapLayers.forEach((layer, idx) => {
-              layerInfo += `- Layer ${idx+1}: ${layer.name || "Unnamed"} (${layer.type || "Unknown type"})\n`;
-            });
-          } else if (data.chartData.gaLayers && data.chartData.gaLayers.length > 0) {
-            layerInfo = `\nMap contains ${data.chartData.gaLayers.length} layers.\n`;
+        const charts = Array.isArray(data.chartData) ? data.chartData : [data.chartData];
+
+        // Accumulate row/actual-row counts across all charts
+        metricReport.rowCount = charts.reduce((sum, c) => sum + (c.rowCount || 0), 0);
+        metricReport.actualRows = charts.reduce((sum, c) => sum + (c.data ? c.data.length : 0), 0);
+        metricReport.dataSampled = charts.some(c => c.dataSampled);
+
+        const parts = charts.map((chart, idx) => {
+          let part = "";
+          if (charts.length > 1) {
+            part += `=== Chart ${idx + 1}: ${(chart.info && chart.info.title) || "Untitled"} ===\n`;
           }
-          
-          // Build map information
-          formattedChartData = `Map Visualization: "${chartTitle}"\n\n`;
-          
-          // Add dimensions if available
-          if (dimensions.length > 0) {
-            formattedChartData += "Dimensions: " + dimensions.map(d => d.name || "Unnamed").join(", ") + "\n";
-          }
-          
-          // Add measures if available  
-          if (measures.length > 0) {
-            formattedChartData += "Measures: " + measures.map(m => m.name || "Unnamed").join(", ") + "\n";
-          }
-          
-          // Add layer information
-          formattedChartData += layerInfo;
-          
-          // Add note about map data limitations
-          formattedChartData += "\nNOTE: Detailed map data extraction is currently limited. " +
-                              "Please specify any cities or regions you're interested in analyzing " +
-                              "in your question, and I'll focus on those areas if mentioned in the map.\n";
-          
-          if (config.DEBUG_MODE) {
-            console.log(`[DEBUG] Processed map visualization with limited data extraction`);
-          }
-        } else {
-          // For non-map visualizations, use the standard formatting
-          formattedChartData = this.formatChartDataForLLM(data.chartData);
-          
-          // Try city-values extraction if enabled and it's not a map
-          if (config.FEATURES && config.FEATURES.EXTRACT_CITY_VALUES) {
-            const cityValues = dataFormat.extractCityValues(data.chartData);
-            
-            // If we found city values, append them to the formatted data
-            if (cityValues && cityValues.length > 0) {
-              if (config.DEBUG_MODE) {
-                console.log(`[DEBUG] Found ${cityValues.length} city-value pairs`);
+
+          const isMap = chart.info && chart.info.type && chart.info.type.toLowerCase().includes('map');
+
+          if (isMap) {
+            const dimensions = chart.dimensions || [];
+            const measures   = chart.measures   || [];
+            part += `Map Visualization: "${(chart.info && chart.info.title) || "Untitled Map"}"\n\n`;
+            if (dimensions.length > 0) part += "Dimensions: " + dimensions.map(d => d.name || "Unnamed").join(", ") + "\n";
+            if (measures.length   > 0) part += "Measures: "   + measures.map(m => m.name || "Unnamed").join(", ") + "\n";
+            if (chart.mapLayers && chart.mapLayers.length > 0) {
+              part += `\nMap contains ${chart.mapLayers.length} layers.\n`;
+              chart.mapLayers.forEach((layer, i) => {
+                part += `- Layer ${i+1}: ${layer.name || "Unnamed"} (${layer.type || "Unknown type"})\n`;
+              });
+            }
+            part += "\nNOTE: Detailed map data extraction is currently limited.\n";
+            if (config.DEBUG_MODE) console.log("[DEBUG] Processed map visualization");
+          } else {
+            part += this.formatChartDataForLLM(chart);
+            if (config.FEATURES && config.FEATURES.EXTRACT_CITY_VALUES) {
+              const cityValues = dataFormat.extractCityValues(chart);
+              if (cityValues && cityValues.length > 0) {
+                part += "\n\nCity Values:\n" + dataFormat.formatCityValuesTable(cityValues);
               }
-              
-              // Add city values to the end of the formatted data
-              formattedChartData += "\n\nCity Values:\n" + dataFormat.formatCityValuesTable(cityValues);
             }
           }
-        }
-        
+          return part;
+        });
+
+        formattedChartData = parts.join("\n");
+
         // Report sizes
         metricReport.chartDataChars = formattedChartData.length;
         metricReport.chartDataReduction = Math.round((1 - (formattedChartData.length / rawChartDataJson.length)) * 100);
-        
+
         if (config.DEBUG_MODE) {
           console.log(`[DEBUG] Chart data formatted: ${formattedChartData.length} chars (${metricReport.chartDataReduction}% reduction from raw JSON)`);
         }

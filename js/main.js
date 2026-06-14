@@ -37,7 +37,7 @@ define([
               items: {
                 apiKey: {
                   ref: "props.apiKey",
-                  label: "API Key",
+                  label: "API Key (leave blank to remove the stored key)",
                   type: "string",
                   expression: "optional"
                 },
@@ -59,6 +59,10 @@ define([
                   type: "string",
                   expression: "optional",
                   defaultValue: ""
+                },
+                versionInfo: {
+                  component: "text",
+                  label: "Version " + config.VERSION + " · build " + config.BUILD
                 }
               }
             }
@@ -75,19 +79,29 @@ define([
         }
         config.API.PROXY_URL = layout.props.proxyUrl || '';
 
-        // Persist a key entered via the properties panel, if not already stored.
-        if (layout.props.apiKey && !security.getAPIKey()) {
-          security.storeAPIKey(layout.props.apiKey);
-          console.log("[DEBUG] API key stored from properties");
+        // The properties panel is the single source of truth for the API key.
+        // Sync localStorage to the property on every paint: a non-empty field
+        // sets/updates the stored key; an emptied field clears it.
+        var propKey = (layout.props.apiKey || '').trim();
+        if (propKey) {
+          if (propKey !== security.getAPIKey()) {
+            security.storeAPIKey(propKey);
+            console.log("[DEBUG] API key stored/updated from properties");
+          }
+        } else if (security.getAPIKey()) {
+          security.clearAPIKey();
+          console.log("[DEBUG] API key cleared (properties field emptied)");
         }
+
+        // Keep the panel's status line in sync with the property change.
+        uiController.renderApiKeyStatus();
       }
 
-      // One-time initialization per extension instance. Qlik calls paint() on every
-      // property change / selection event; rebuilding the DOM and re-attaching event
-      // handlers each time loses panel state and leaks listeners.
-      if (!$element.data('anthropicInitialized')) {
-        $element.data('anthropicInitialized', true);
-
+      // One-time initialization for the session. The floating widget is injected into
+      // document.body, so we guard on its DOM presence rather than on $element — this
+      // ensures only one widget exists even when the extension appears on multiple sheets
+      // or when Qlik calls paint() repeatedly on property changes / selection events.
+      if (!document.getElementById('anthropic-floating-widget')) {
         uiController.initUI($element, layout);
 
         const app = qlik.currApp();

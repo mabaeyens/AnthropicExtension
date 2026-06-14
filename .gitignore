@@ -16,3 +16,10 @@ npm-debug.log*
 
 # Logs
 *.log
+
+# Build artifacts (regenerate with package.ps1)
+AnthropicExtension-v*.zip
+_staging/
+
+# Claude local machine settings (skills under .claude/skills are kept)
+.claude/settings.local.json

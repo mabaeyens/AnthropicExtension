@@ -47,12 +47,24 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           return;
         }
       
-        // Extract the object ID from the class name
-        const objectIdMatch = $vizObject.attr('class') ? $vizObject.attr('class').match(/qv-object-([a-zA-Z0-9]+)/) : null;
-        const objectId = objectIdMatch ? objectIdMatch[1] : null;
-      
+        // Extract the object ID. Qlik sets the real object id on the sheet
+        // cell's `tid` attribute — this is reliable across versions. The
+        // qv-object-<id> CSS class is a fragile fallback because the element
+        // also carries a qv-object-<type> class (e.g. qv-object-barchart),
+        // and the old regex could grab the type instead of the id.
+        const objectId = this.extractObjectId($target, $vizObject);
+
         if (!objectId) {
-          console.log("[DEBUG] Could not extract object ID from class");
+          console.log("[DEBUG] Could not extract object ID from element");
+          // Surface a copyable DOM dump so the id-bearing attribute can be
+          // identified without another blind round-trip. Only fires when the
+          // GUID-by-shape walk found nothing (rare).
+          if ($vizObject.length && selectionCallback) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            selectionCallback(null, null, { objectId: null, dom: this.describeDomChain($target) });
+          }
           return;
         }
       
@@ -74,9 +86,13 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         if (objectId) {
           console.log("[DEBUG] Visualization clicked in selection mode:", objectId);
 
-          // Prevent default behavior
+          // Prevent default behavior. stopImmediatePropagation is essential:
+          // this handler runs in the capture phase (see addEventListener below),
+          // so stopping propagation here keeps the click from ever reaching
+          // Qlik's own chart handlers, which would otherwise select values.
           e.preventDefault();
           e.stopPropagation();
+          e.stopImmediatePropagation();
 
           // Get the object data
           this.getObjectData(objectId).then(function(chartData) {
@@ -85,26 +101,21 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
               selectionCallback(objectId, chartData);
             }
           }.bind(this)).catch(function(error) {
-            console.error("[DEBUG] Error getting object data:", error);
-
-            // Call the callback with basic info even if there's an error
+            console.error("[DEBUG] Error getting object data for", objectId, ":", error);
+            // Signal failure cleanly — null id/data tell the UI to show an error
+            // without storing invalid data as a chart selection. Pass the real
+            // error so the panel can surface why it failed.
             if (selectionCallback) {
-              const basicData = {
-                info: {
-                  id: objectId,
-                  title: "Error: " + error.message,
-                  type: "Unknown"
-                },
-                data: ["Error retrieving data: " + error.message]
-              };
-              selectionCallback(objectId, basicData);
+              selectionCallback(null, null, { objectId: objectId, error: error });
             }
           });
         }
       }.bind(this);
 
-      // Attach the handler
-      $(document).on('click.anthropicSelection', selectionHandler);
+      // Attach the handler in the CAPTURE phase (third arg = true) so it runs
+      // before Qlik's descendant chart handlers — bubble-phase ($(document).on)
+      // fired too late and the chart selected values instead.
+      document.addEventListener('click', selectionHandler, true);
 
       console.log("[DEBUG] Selection tracking started");
     },
@@ -115,9 +126,9 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     stopSelectionTracking: function() {
       console.log("[DEBUG] Stopping visualization selection tracking");
 
-      // Remove the handler if it exists
+      // Remove the handler if it exists (must match the capture-phase flag)
       if (selectionHandler) {
-        $(document).off('click.anthropicSelection', selectionHandler);
+        document.removeEventListener('click', selectionHandler, true);
         selectionHandler = null;
       }
 
@@ -156,6 +167,75 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
 
       selectionStyleAdded = true;
       console.log("[DEBUG] Selection styles added");
+    },
+
+    /**
+     * Extract the Qlik object id from a clicked element.
+     * Order of preference:
+     *   1. `tid` attribute on the nearest cell/object (reliable, Qlik-set)
+     *   2. `data-qid` / `data-object-id` attributes
+     *   3. the qv-object-<id> CSS class, skipping qv-object-<type> tokens
+     * @param {jQuery} $target - the actual clicked element
+     * @param {jQuery} $vizObject - the closest .qv-object container
+     * @returns {string|null} the object id
+     */
+    extractObjectId: function ($target, $vizObject) {
+      var GUID = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+
+      // 1. Find the object id by its SHAPE (a GUID) rather than by a specific
+      //    attribute name. Walk up from the clicked element and return the
+      //    nearest attribute value that contains a GUID. This works across Qlik
+      //    versions and viz types: native charts, master-item vizzes, and
+      //    Visualization-bundle vizzes (e.g. distributionplot) whose .qv-object
+      //    class carries only the TYPE (qv-object-distributionplot), not the id.
+      var el = $target[0];
+      while (el && el !== document.body) {
+        if (el.attributes) {
+          for (var i = 0; i < el.attributes.length; i++) {
+            var m = (el.attributes[i].value || '').match(GUID);
+            if (m && m[0] !== extensionId) return m[0];
+          }
+        }
+        el = el.parentElement;
+      }
+
+      // 2. Fall back to a GUID inside the .qv-object class list.
+      var cls = ($vizObject.attr('class') || '');
+      var clsMatch = cls.match(GUID);
+      if (clsMatch && clsMatch[0] !== extensionId) return clsMatch[0];
+
+      // 3. Last resort: legacy qv-object-<token> behaviour for charts whose id is
+      //    a short non-GUID token. Skip known type words.
+      var tokens = (cls.match(/qv-object-([a-zA-Z0-9_-]+)/g) || [])
+        .map(function (t) { return t.replace('qv-object-', ''); })
+        .filter(function (t) { return t !== 'distributionplot' && /[A-Z0-9]/.test(t); });
+      return tokens[0] || null;
+    },
+
+    /**
+     * Build a copyable dump of the clicked element's ancestor chain (up to the
+     * .qv-object container) — used as a diagnostic when extractObjectId fails so
+     * the exact id-bearing attribute can be identified without guesswork.
+     * @param {jQuery} $target - the actual clicked element
+     * @returns {string} a human-readable ancestor/attribute dump
+     */
+    describeDomChain: function ($target) {
+      var lines = [];
+      var el = $target[0];
+      var depth = 0;
+      while (el && el !== document.body && depth < 12) {
+        var attrs = [];
+        if (el.attributes) {
+          for (var i = 0; i < el.attributes.length; i++) {
+            attrs.push(el.attributes[i].name + '="' + el.attributes[i].value + '"');
+          }
+        }
+        lines.push('<' + (el.tagName || '?').toLowerCase() + ' ' + attrs.join(' ') + '>');
+        if (el.classList && el.classList.contains('qv-object')) break;
+        el = el.parentElement;
+        depth++;
+      }
+      return lines.join('\n');
     },
 
     /**

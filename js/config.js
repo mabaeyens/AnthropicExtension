@@ -13,6 +13,12 @@ define([], function() {
     // Debug mode - set to false for production
     DEBUG_MODE: false,  // Change to true to enable verbose console logging
 
+    // Extension version + build — single source of truth shown in the panel
+    // footer and the settings panel. VERSION matches AnthropicExtension.qext;
+    // bump BUILD by 1 on every package.
+    VERSION: '0.2.0',
+    BUILD: 8,
+
     // API Configuration
     API: {
       // Direct Anthropic endpoint, called from the browser. Used when PROXY_URL is empty.
