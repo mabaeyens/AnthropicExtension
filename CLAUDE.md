@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Qlik Sense visualization extension that adds an AI assistant panel to dashboards. Users select a chart object, type a natural language question, and receive Claude-generated analysis. On the first request it also sends the app's data-model structure (field names + master items) so Claude can interpret the chart in context.
 
-By default the extension calls the Anthropic API **directly from the browser** (`https://api.anthropic.com/v1/messages`) using the `anthropic-version` and `anthropic-dangerous-direct-browser-access` headers — **no proxy required**. On Qlik Sense Enterprise this needs a one-time QMC Content Security Policy entry allowing `api.anthropic.com` on `connect-src`. A **local Node.js proxy is optional**: set a Proxy URL in the extension properties to route requests through it instead (e.g. [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy) at `https://localhost:3000/api/anthropic`).
+By default the extension calls the Anthropic API **directly from the browser** (`https://api.anthropic.com/v1/messages`) using the `anthropic-version` and `anthropic-dangerous-direct-browser-access` headers — **no proxy required**. Targets **client-managed Qlik Sense on Windows (QSEoW)**, where the direct call normally works as-is; if the environment blocks it, set a Proxy URL. (Qlik Cloud is out of scope — it has native AI assistants.) A **local Node.js proxy is optional**: set a Proxy URL in the extension properties to route requests through it instead (e.g. [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy) at `https://localhost:3000/api/anthropic`).
 
 See `diagrams.md` for sequence and data-flow diagrams.
 
@@ -38,7 +38,7 @@ All modules use the RequireJS `define(dependencies, factory)` pattern. `main.js`
 
 ## Key Constraints
 
-- **Proxy is optional.** Direct browser calls work via the `anthropic-dangerous-direct-browser-access` header; on Enterprise this requires a one-time QMC CSP `connect-src` entry for `api.anthropic.com`. Setting a Proxy URL routes through a proxy instead (which must forward to `https://api.anthropic.com/v1/messages` and return the body unchanged).
+- **Proxy is optional.** Direct browser calls work via the `anthropic-dangerous-direct-browser-access` header and normally function on QSEoW without extra config; if the environment blocks the outbound call, set a Proxy URL to route through a proxy instead (which must forward to `https://api.anthropic.com/v1/messages` and return the body unchanged). (Note: QSEoW has no QMC Content Security Policy page — that's a Qlik Cloud/QSEoK concept; do not document a QMC CSP step for QSEoW.)
 - **Qlik paint cycle.** `main.js:paint()` is called by Qlik on every property change or selection event — UI init is behind a first-run guard; keep it that way.
 - **No ES modules.** All files must use `define([...], function(...) {})` syntax. No `import`/`export`.
 - **CryptoJS is bundled.** `js/lib/crypto-js.min.js` (v4.2.0) is included directly and required as `./lib/crypto-js.min`; do not reference it from a CDN.

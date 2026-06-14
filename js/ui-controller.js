@@ -225,8 +225,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           $container.find('#debug-area').show();
         }
 
-        // Version/build footer at the bottom of the panel
-        $('#anthropic-version-info').text('v' + config.VERSION + ' · build ' + config.BUILD);
+        // Version/build/author footer at the bottom of the panel
+        $('#anthropic-version-info').text('v' + config.VERSION + ' · build ' + config.BUILD +
+          (config.AUTHOR ? ' · by ' + config.AUTHOR : ''));
 
         this.setupEventHandlers();
         console.log('UI initialized — floating widget injected into body');

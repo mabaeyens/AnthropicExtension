@@ -1,9 +1,9 @@
 {
   "name": "Anthropic AI Assistant",
-  "description": "v0.3.0 build 16 — Analyze the selected Qlik Sense chart with Claude. Calls the Anthropic API directly from the browser (or via an optional local proxy). End users only need to enter their API key.",
+  "description": "v0.3.0 build 17 — Analyze the selected Qlik Sense chart with Claude. Calls the Anthropic API directly from the browser (or via an optional local proxy). End users only need to enter their API key.",
   "type": "visualization",
   "version": "0.3.0",
-  "author": "Qlik AI Integration Team",
+  "author": "mabaeyens",
   "icon": "extension",
   "preview": "icon.png",
   "dependencies": {

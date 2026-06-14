@@ -48,6 +48,15 @@ the **real data model** and **complete table data** to Claude.
   structural and rendering decides supported types (maps excluded); histogram handled.
 - Collapsed panel no longer traps clicks on the native Qlik UI / Edit-sheet button.
 
+### Documentation
+- Refreshed `README.md`, `INSTALL.md`, and `diagrams.md` for the v0.3.0 flows, emphasising that
+  **Qlik data leaves the on-prem environment** to an external LLM, and adding a **demo-only /
+  no-liability** notice (neither Qlik nor the author accept liability).
+- Scoped to **client-managed Qlik Sense on Windows (QSEoW)**; removed the QMC Content Security Policy
+  step (not applicable to QSEoW) and dropped Qlik Cloud support (Cloud already has native AI
+  assistants).
+- Author credited as **mabaeyens** (`.qext`, panel footer, README).
+
 ### Notes / known limitations
 - **Map visualizations** are not yet supported for selection or chart creation.
 - **Add to sheet** writes to the live app and therefore requires the sheet to be in **Edit

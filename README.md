@@ -1,25 +1,59 @@
 # AnthropicExtension
 
-Qlik Sense visualization extension that analyses chart data using the Anthropic API (Claude).
+Qlik Sense visualization extension that analyses chart data using a Large Language Model (Claude, via
+the Anthropic API) and can suggest and create Qlik charts from the model's responses.
 
-> ⚠️ **Experimental / demo build (v0.2.0).** Not hardened for production. In the default mode the
-> Anthropic API key is sent from the browser directly to `api.anthropic.com` and is only obfuscated
-> in `localStorage`. See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), and
-> [`diagrams.md`](./diagrams.md).
+> ## ⚠️ Demo only — no warranty, no liability
+>
+> This is an **experimental demonstration asset (v0.3.0)**, not a product. It is **not** hardened for
+> production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
+> accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
+> customer, production, or other environment. **Use entirely at your own risk.**
+>
+> ### Your data leaves your environment
+>
+> When a question is asked, the extension sends Qlik data **out of your on-prem Qlik Sense environment
+> to an external Large Language Model**. As of v0.3.0 this includes the **full** contents of the
+> selected chart/table (the complete hypercube, not just a preview), the app's **field and table
+> names**, and **master dimension/measure definitions**. In the default mode this goes from the
+> **browser directly to `api.anthropic.com`**; with the optional proxy it goes to whichever LLM
+> endpoint the proxy targets. The Anthropic API key is only **obfuscated** in `localStorage`, not
+> strongly encrypted. **Do not use this with sensitive, regulated, or personal data** unless that
+> data egress is explicitly permitted in your environment.
+>
+> See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), and [`diagrams.md`](./diagrams.md).
+
+> ℹ️ This repository is **not public yet**; it may be made public in the future. The disclaimer above
+> applies regardless.
 
 ## Description
 
-Adds an AI panel to any Qlik Sense dashboard. The user selects a visualization, asks a question in natural language and receives a Claude-generated analysis of the chart data. On the first request, the extension also sends the app's data-model structure (field names and master items) so Claude can interpret the chart in context.
+Adds a floating AI assistant panel to any Qlik Sense dashboard. The user selects one or more
+visualizations, asks questions in natural language, and receives Claude-generated analysis rendered as
+a **Markdown chat thread** with memory across the conversation. The assistant can also **suggest a
+Qlik chart** from its answer and **create it** — preview it in the panel and add it to the current
+sheet (in Edit mode). On the first request, the extension sends the app's **data-model structure**
+(real table and field names, plus master dimension/measure definitions) so Claude can interpret the
+chart in context.
 
-By default the extension calls `https://api.anthropic.com/v1/messages` **directly from the browser** using Anthropic's `anthropic-dangerous-direct-browser-access` header — **no proxy required**. For this to work in Qlik Sense Enterprise, an administrator adds `api.anthropic.com` to the QMC Content Security Policy once (see Installation).
+**Where the data goes:** the selected chart's data — as of v0.3.0 the **full** hypercube, not just an
+initial page — together with the data-model structure is sent to an external LLM. By default the
+extension calls `https://api.anthropic.com/v1/messages` **directly from the browser** using Anthropic's
+`anthropic-dangerous-direct-browser-access` header — **no proxy required**. On client-managed Qlik
+Sense (QSEoW) the direct call normally works as-is; if your environment blocks it, set the optional
+**Proxy URL** (see Installation). If the selected data exceeds ~65 KB, the panel **warns before
+sending**.
+
+This extension targets **client-managed Qlik Sense on Windows** (Desktop and Enterprise). **Qlik Cloud
+is intentionally out of scope** — Qlik Cloud already ships native AI assistants, so there is no plan to
+support it here.
 
 Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)) by setting a **Proxy URL** in the extension properties — useful if your organization prefers to keep the API key server-side.
 
 ## Requirements
 
-- Qlik Sense Desktop (Windows) or Qlik Sense Enterprise ≥ 3.0
+- Client-managed Qlik Sense on Windows — Desktop or Enterprise (QSEoW) ≥ 3.0 (not Qlik Cloud)
 - Anthropic API key (this is the **only** thing an end user configures)
-- For the direct (default) mode on Enterprise: a one-time QMC Content Security Policy entry for `api.anthropic.com` (admin step)
 - For the optional proxy mode only: a Node.js proxy at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
 
 ## Installation
@@ -27,11 +61,12 @@ Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-pr
 1. Copy the repository folder into the Qlik Sense extensions directory:
    - **Desktop**: `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\`
    - **Enterprise**: QMC console → Extensions → Import
-2. **(Enterprise, direct mode only)** In the QMC, open **Content Security Policy** and add an entry
-   allowing `api.anthropic.com` on the `connect-src` directive, then restart the proxy/engine service.
-   This is a one-time admin step. (Skip if you use the optional Proxy URL instead.)
-3. Reload Qlik Sense
-4. The extension will appear in the assets panel as **"Anthropic AI Assistant"**
+2. Reload Qlik Sense
+3. The extension will appear in the assets panel as **"Anthropic AI Assistant"**
+
+> On client-managed Qlik Sense (QSEoW) the default direct browser call usually works without extra
+> configuration. If your environment blocks the outbound call, set the optional **Proxy URL** in the
+> extension properties (see below) and run a local proxy.
 
 ## Configuration
 
@@ -78,23 +113,33 @@ that:
 
 ## Architecture & data flow
 
-The request path (User → Qlik Sense → Anthropic → back) is:
+The request path (User → Qlik Sense → **external LLM** → back) is:
 
 1. **Select** — clicking a chart is detected via its `qv-object-<id>` DOM class; `data-collector.js`
-   pulls the object's hypercube (dimensions, measures, rows) and `data-format.js` trims it to a token
-   budget.
-2. **Context (first use)** — `data-collector.getAppContextCached()` collects the data model (field
-   names + master items) **once per session** and caches it.
-3. **Assemble** — `ui-controller.js` builds `{ userPrompt, chartData, context, systemPrompt }`.
-4. **Send** — `anthropic-api.js` decrypts the key (`security.js`), formats the message, and chooses
-   the transport with `buildTransport()`:
+   resolves the real object id (engine-validated) and pulls the object's hypercube. For large tables
+   it **pages the full hypercube** rather than a single initial page; `data-format.js` formats it for
+   the model.
+2. **Context (first use)** — `data-collector.getAppContextCached()` collects the **real data model**
+   via `getTablesAndKeys` plus a field/dimension/measure session object (table names, full field list,
+   master dimensions/measures with expressions) **once per session** and caches it.
+3. **Assemble** — `ui-controller.js` builds `{ userPrompt, chartData, context, systemPrompt, history }`
+   as a running conversation. Chart data is resent only when the selection changes; context only on
+   the first turn. If the payload exceeds ~65 KB it **prompts the user to confirm** before sending.
+4. **Send (data leaves on-prem)** — `anthropic-api.js` decrypts the key (`security.js`), formats the
+   message, and chooses the transport with `buildTransport()`:
    - **Direct (default):** `POST https://api.anthropic.com/v1/messages` with `x-api-key`,
      `anthropic-version`, and `anthropic-dangerous-direct-browser-access: true`.
-   - **Proxy (optional):** `POST <Proxy URL>` with `x-api-key`; the proxy forwards to Anthropic.
-5. **Render** — Claude's reply is formatted by `formatting.js` and shown in the panel.
+   - **Proxy (optional):** `POST <Proxy URL>` with `x-api-key`; the proxy forwards to the LLM.
+5. **Render** — Claude's reply is rendered as Markdown (`formatting.js` + bundled `marked.js`) into the
+   chat thread; each answer has a **Copy** button.
+6. **Create a chart (optional, write-back)** — "Suggest a chart" asks the model for a chart spec;
+   `chart-builder.js` renders a **live preview** via the in-session Qlik visualization API and can
+   **add it to the current sheet** (Edit mode), placing it below existing objects or offering a new
+   sheet when the current one is full. This path writes to the live app **as the logged-in user** — no
+   external service is involved in the creation step.
 
-See [`diagrams.md`](./diagrams.md) for sequence, component, key-storage, and transport-decision
-diagrams (rendered with Mermaid on GitHub).
+See [`diagrams.md`](./diagrams.md) for sequence, component, key-storage, transport-decision, and
+chart-creation diagrams (rendered with Mermaid on GitHub).
 
 ## Structure
 
@@ -114,33 +159,51 @@ AnthropicExtension/
 └── js/
     ├── config.js            # Central configuration
     ├── main.js              # Extension initialization + properties panel
-    ├── anthropic-api.js     # API client (direct or via proxy)
-    ├── data-collector.js    # Data extraction from Qlik visualizations + app context
+    ├── anthropic-api.js     # API client (direct or via proxy) + context/message serialization
+    ├── data-collector.js    # Data extraction (full hypercube) + real data-model context
     ├── data-format.js       # Data formatting for the LLM
-    ├── ui-controller.js     # UI management
+    ├── ui-controller.js     # Panel UI, conversation thread, copy, large-payload warning
+    ├── chart-builder.js     # Parse chart spec → live preview / add to sheet (Qlik viz API)
+    ├── formatting.js        # Markdown→HTML rendering of responses (uses marked.js)
     ├── template.js          # Inlined panel markup (loaded with the bundle)
     ├── security.js          # API key management (CryptoJS AES, shared key)
     └── lib/
-        └── crypto-js.min.js # CryptoJS 4.2.0 — bundled, no npm install required
+        ├── crypto-js.min.js # CryptoJS 4.2.0 — bundled, no npm install required
+        └── marked.min.js    # marked 12.x — bundled Markdown renderer
 ```
 
 ## Status
 
-- [x] Data extraction from charts (bar, line, combo, map)
+- [x] Data extraction from native charts (bar, line, combo, box, etc.); engine-validated id resolution
+- [x] **Full hypercube** retrieval for large tables (with a ~65 KB pre-send warning)
 - [x] Analysis with Claude (direct browser call by default; optional proxy)
-- [x] Data-model structure (fields + master items) sent on first use
+- [x] **Conversation thread** with memory, Markdown rendering, and per-response copy
+- [x] **Real data-model context** (tables, fields, master dimensions/measures) sent on first use
+- [x] **Suggest a chart** (live preview) and **add to sheet** (Edit mode; new-sheet fallback)
 - [x] Encrypted API key storage (CryptoJS AES), shared across Qlik apps
-- [ ] Qlik Cloud support (untested)
+- [ ] **Map** visualizations (selection / creation) — not yet supported
+- Qlik Cloud — **out of scope** (Cloud already has native AI assistants)
 
 ## Notes
 
-- Compatible with **Qlik Sense on Windows** (Desktop and Enterprise); not tested on Qlik Cloud
+- **Demo only.** Not a Qlik product and not production-hardened. **Neither Qlik nor the author accept
+  any liability** for issues, data exposure, or costs in any environment — use at your own risk.
+- **Data egress.** Asking a question sends chart data (the full table/hypercube), table/field names,
+  and master-item definitions to an external LLM. Don't use it with sensitive/regulated/personal data
+  unless that egress is permitted.
+- Compatible with **client-managed Qlik Sense on Windows** (Desktop and Enterprise / QSEoW). Qlik
+  Cloud is out of scope (it already has native AI assistants)
 - The API key is encrypted with CryptoJS AES before being written to `localStorage` and is reused
   across all Qlik apps. The encryption passphrase is bundled in the extension, so this is
   **obfuscation, not strong secrecy** — appropriate for on-prem internal deployments where the goal
   is to keep the key out of plain sight, not to defend against a determined local attacker.
 - `crypto-js.min.js` is bundled in the repo; no `npm install` required
 - Model and Proxy URL are set in the extension properties panel; deeper defaults live in `js/config.js`
+
+## Author
+
+Created and maintained by **mabaeyens**. (Demo asset — see the no-warranty / no-liability notice
+above; not a Qlik product.)
 
 ## 🛠️ Development Workflow: Human-AI Collaboration
 
@@ -155,6 +218,11 @@ This approach demonstrates the ability to direct advanced AI tools to accelerate
 ## 📄 License
 
 This project is licensed under the **MIT License**. You can find the full text in the [`LICENSE`](./LICENSE) file.
+
+> **No warranty / no liability.** Consistent with the MIT License, this demo asset is provided
+> "AS IS", without warranty of any kind. **Neither Qlik nor the author is liable** for any claim,
+> damage, data exposure, or cost arising from its use — including in customer or production
+> environments. It is **not** a Qlik product or supported integration.
 
 > **Note on authorship:** Although much of the source code was generated by an AI, the creative direction, architecture, and final integration are human work. Usage rights are granted under the terms of the MIT License.
 
