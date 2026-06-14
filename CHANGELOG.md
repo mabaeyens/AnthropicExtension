@@ -6,6 +6,54 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [0.3.0] - 2026-06-14
+
+Conversation, charting, and data-fidelity release. The assistant becomes a persistent,
+movable chat that renders Markdown, can **suggest and create Qlik charts**, and now sends
+the **real data model** and **complete table data** to Claude.
+
+### Added
+- **Conversation thread with memory:** the panel is a chat thread that persists across
+  sheet navigation and chart re-selection; follow-up questions retain context. Includes a
+  **New chat** reset. The most recent exchange shows at the **top**, history below.
+- **Markdown rendering** of responses (bundled `marked.js`) — headings, lists, tables, code.
+- **Copy button** on every response (copies the raw Markdown).
+- **Suggest a chart:** Claude proposes a chart spec (type + dimensions + measure
+  expressions) and the extension renders a **live preview** in the panel via the in-session
+  Qlik visualization API — as the logged-in user, no proxy/MCP. The suggestion builds on the
+  previous response plus your prompt.
+- **Add to sheet (Edit mode):** place a suggested chart on the current sheet below existing
+  objects; if the sheet is **full**, existing charts are left untouched and you're offered a
+  **new sheet** instead.
+- **Movable panel:** drag the floating panel by its header so it no longer covers charts
+  during selection. Panel is **twice as wide**.
+- **Large-data warning:** if the selected chart data exceeds ~65 KB, you're warned about the
+  token cost before it is sent.
+
+### Changed
+- **Full hypercube retrieval:** large tables now page through the **entire** result set
+  instead of sending only the engine's initial page.
+- **Richer app context:** the data model is collected via `getTablesAndKeys` plus a
+  field/dimension/measure session object — real table names, the full field list, and
+  **master dimensions/measures (with expressions)** — and serialized in full to the LLM.
+- **Robust chart selection:** native charts (bar/line/combo/box/etc.) and older short
+  engine-ids resolve via engine-validated candidate matching.
+- `version` set to `0.3.0`.
+
+### Fixed
+- App context previously sent only a placeholder "Data Model" table with few/no fields
+  (fragile `FieldList()` scrape + discarded master items) — Claude now receives the real
+  tables, fields, and master items.
+- Chart-suggestion parsing rejected valid specs (e.g. `histogram`) — parsing is now
+  structural and rendering decides supported types (maps excluded); histogram handled.
+- Collapsed panel no longer traps clicks on the native Qlik UI / Edit-sheet button.
+
+### Notes / known limitations
+- **Map visualizations** are not yet supported for selection or chart creation.
+- **Add to sheet** writes to the live app and therefore requires the sheet to be in **Edit
+  mode**.
+- Experimental/demo only — see the warning above and `INSTALL.md`.
+
 ## [0.2.0] - 2026-06-12
 
 First public demo build. The previous internal build required a separate local Node.js proxy and
@@ -55,4 +103,5 @@ runnable with **only an API key**.
 - The encryption passphrase is bundled in the extension, so key storage is obfuscation, not strong
   secrecy — appropriate for on-prem internal demos only.
 
+[0.3.0]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.2.0

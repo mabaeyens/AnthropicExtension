@@ -16,8 +16,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.2.0',
-    BUILD: 11,
+    VERSION: '0.3.0',
+    BUILD: 16,
 
     // API Configuration
     API: {

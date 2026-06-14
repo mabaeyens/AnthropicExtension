@@ -424,41 +424,49 @@ define(['jquery', './security', './config', './data-format'], function($, securi
       if (!context) return "";
       
       let result = [];
-      
+      const PER_TABLE = 60; // soft cap on fields listed per table
+
       // Add app information
       if (context.appId) {
         result.push(`App: ${context.appName || "Unnamed"} (ID: ${context.appId})`);
       }
-      
-      // Add fields in a compact way
-      if (context.fields && context.fields.length > 0) {
-        result.push("Fields: " + context.fields.map(f => f.name).join(", "));
-      }
-      
-      // Add tables in a more compact format
+
+      // Tables with their full field lists (this is the data model the LLM needs)
       if (context.tables && context.tables.length > 0) {
-        result.push("\nTables:");
-        
-        // Map each table to a string representation
+        result.push("\nData model tables:");
         const tableStrings = context.tables.map(table => {
           let tableStr = `- ${table.name}`;
-          
           if (table.fields && table.fields.length > 0) {
-            // List only first 5 fields to save space
-            const fieldSample = table.fields.slice(0, 5).join(", ");
-            tableStr += `: ${fieldSample}`;
-            
-            if (table.fields.length > 5) {
-              tableStr += `, ... and ${table.fields.length - 5} more fields`;
+            const shown = table.fields.slice(0, PER_TABLE).join(", ");
+            tableStr += `: ${shown}`;
+            if (table.fields.length > PER_TABLE) {
+              tableStr += `, … and ${table.fields.length - PER_TABLE} more`;
             }
           }
-          
           return tableStr;
         });
-        
         result.push(tableStrings.join("\n"));
+      } else if (context.fields && context.fields.length > 0) {
+        // No table breakdown available — at least list the fields.
+        result.push("\nFields: " + context.fields.map(f => f.name).join(", "));
       }
-      
+
+      // Master measures (with expressions) — important for chart suggestions
+      if (context.masterMeasures && context.masterMeasures.length > 0) {
+        result.push("\nMaster measures:");
+        result.push(context.masterMeasures.map(m =>
+          `- ${m.name}` + (m.expr ? `: ${m.expr}` : "")).join("\n"));
+      }
+
+      // Master dimensions
+      if (context.masterDimensions && context.masterDimensions.length > 0) {
+        result.push("\nMaster dimensions:");
+        result.push(context.masterDimensions.map(d => {
+          const defs = Array.isArray(d.fields) ? d.fields.join(", ") : "";
+          return `- ${d.name}` + (defs ? `: ${defs}` : "");
+        }).join("\n"));
+      }
+
       return result.join("\n");
     },
     

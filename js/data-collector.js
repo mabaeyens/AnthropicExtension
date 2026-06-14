@@ -401,21 +401,21 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
                   // Optimize the data before returning it - get maxRows from config
                   // We don't have UI settings here, so use a higher default to preserve more data
                   const optimizedData = this.optimizeDataForTokens(completeData, {
-                    maxRows: 10000 // Use a high default to avoid limiting too early
+                    maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
                   });
                   resolve(optimizedData);
                 }.bind(this)).catch(function (error) {
                   console.error("[DEBUG] Error fetching table data:", error);
                   // Optimize what we have - use high limits
                   const optimizedData = this.optimizeDataForTokens(chartData, {
-                    maxRows: 10000 // Use a high default to avoid limiting too early
+                    maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
                   });
                   resolve(optimizedData); // Return what we have
                 }.bind(this));
               } else {
                 // No need to fetch more data, optimize and return
                 const optimizedData = this.optimizeDataForTokens(chartData, {
-                  maxRows: 10000 // Use a high default to avoid limiting too early
+                  maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
                 });
                 resolve(optimizedData);
               }
@@ -507,21 +507,21 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
               this.fetchTableData(objectId, chartData).then(function (completeData) {
                 // Optimize the data before returning it
                 const optimizedData = this.optimizeDataForTokens(completeData, {
-                  maxRows: 10000 // Use a high default to avoid limiting too early
+                  maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
                 });
                 resolve(optimizedData);
               }.bind(this)).catch(function (error) {
                 console.error("[DEBUG] Error fetching table data (fallback):", error);
                 // Optimize what we have
                 const optimizedData = this.optimizeDataForTokens(chartData, {
-                  maxRows: 10000 // Use a high default to avoid limiting too early
+                  maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
                 });
                 resolve(optimizedData); // Return what we have
               }.bind(this));
             } else {
               // No need to fetch more data, optimize and return
               const optimizedData = this.optimizeDataForTokens(chartData, {
-                maxRows: 10000 // Use a high default to avoid limiting too early
+                maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
               });
               resolve(optimizedData);
             }
@@ -706,20 +706,20 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           });
         }
     
-        // Check if we have table data and need to fetch more
-        if (chartData.data.length === 0 &&
-            layout.qHyperCube.qSize &&
-            layout.qHyperCube.qSize.qcy > 0) {
-    
-          // We need to fetch the data separately for tables
+        // If the engine returned fewer rows than the hypercube holds (large
+        // tables only ship an initial page), page through the FULL hypercube so
+        // the LLM receives the complete result set. Skipped for stacked data,
+        // whose row count intentionally differs from qSize.
+        const hc = layout.qHyperCube;
+        const isStacked = chartData.chartProperties && chartData.chartProperties.hasStackedData;
+        if (!isStacked && hc.qSize && hc.qSize.qcx > 0 && hc.qSize.qcy > chartData.data.length) {
           if (config.DEBUG_MODE) {
-            console.log("[DEBUG] Table detected with data size:",
-                     layout.qHyperCube.qSize.qcx + "x" + layout.qHyperCube.qSize.qcy);
+            console.log("[DEBUG] Full fetch needed:", hc.qSize.qcx + "x" + hc.qSize.qcy,
+                        "(initial page had " + chartData.data.length + " rows)");
           }
-    
-          // Mark that we need to fetch data
           chartData.needsDataFetch = true;
-          chartData.hypercubeSize = layout.qHyperCube.qSize;
+          chartData.hypercubeSize = hc.qSize;
+          chartData.data = []; // reset so fetchTableData pulls the complete set from row 0
         }
       } else if (isMap) {
         // Handle map visualizations - they can have different data structures
@@ -1203,114 +1203,111 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         console.log("[DEBUG] Setting current app from qlik.currApp()");
       }
 
-      return new Promise(function(resolve, reject) {
-        try {
-          // Create a basic context object with app info
-          const appContext = {
-            appId: currentApp.id,
-            appName: "",
-            timestamp: new Date().toISOString(),
-            tables: [],
-            fields: []
+      var MAX_FIELDS = 500; // soft cap to bound token usage on huge models
+      var doc = currentApp.model && currentApp.model.enigmaModel;
+
+      var appContext = {
+        appId: currentApp.id,
+        appName: "",
+        timestamp: new Date().toISOString(),
+        tables: [],
+        fields: [],
+        masterDimensions: [],
+        masterMeasures: []
+      };
+
+      if (!doc) {
+        console.warn("[DEBUG] No enigma handle — returning minimal context");
+        return Promise.resolve(appContext);
+      }
+
+      // Each source is individually caught so one failure never empties the rest.
+      var pTitle = doc.evaluate('=DocumentTitle()').then(function(title) {
+        appContext.appName = title || "Unknown";
+      }, function() { appContext.appName = "Unknown"; });
+
+      var pTables = doc.getTablesAndKeys(
+        { qcx: 0, qcy: 0 }, { qcx: 0, qcy: 0 }, 30, true, false
+      ).then(function(res) {
+        var tables = (res && res.qtr) || [];
+        appContext.tables = tables.map(function(t) {
+          return {
+            name: t.qName,
+            fields: (t.qFields || []).map(function(f) { return f.qName; })
           };
+        });
+      }, function(err) {
+        console.warn("[DEBUG] getTablesAndKeys failed:", err);
+      });
 
-          // Try to get the app name
-          currentApp.model.enigmaModel.evaluate('=DocumentTitle()').then(function(title) {
-            appContext.appName = title;
-            console.log("[DEBUG] App name retrieved:", title);
-          }).catch(function(err) {
-            console.warn("[DEBUG] Could not get app title:", err);
-            appContext.appName = "Unknown";
-          });
-
-          // Check if we can use the new way to get tables and fields
-          if (typeof currentApp.getObjects === 'function') {
-            console.log("[DEBUG] Using getObjects API method");
-
-            // Get list of master items to extract fields
-            currentApp.getObjects({
-              qTypes: ['masterobject'],
-              qData: {}
-            }).then(function(objects) {
-              console.log("[DEBUG] Retrieved master objects:", objects.length);
-
-              // Get list of available fields
-              return currentApp.model.enigmaModel.evaluate('[$(=FieldList())];');
-            }).then(function(fieldListStr) {
-              console.log("[DEBUG] Field list string retrieved");
-
-              try {
-                // Parse field list (it's returned as a string)
-                let fieldNames = fieldListStr.replace(/[\[\]']/g, '').split(',');
-                fieldNames = fieldNames.map(f => f.trim());
-
-                appContext.fields = fieldNames.map(fieldName => {
-                  return { name: fieldName };
-                });
-
-                console.log("[DEBUG] Parsed fields:", appContext.fields.length);
-
-                // Since we don't have direct table info, create a placeholder
-                appContext.tables = [{
-                  name: "App Data Model",
-                  fields: fieldNames
-                }];
-
-                console.log("[DEBUG] Context collection complete");
-                resolve(appContext);
-              } catch (e) {
-                console.error("[DEBUG] Error parsing field list:", e);
-                // Even if we have an error, return the partial context
-                resolve(appContext);
-              }
-            }).catch(function(err) {
-              console.warn("[DEBUG] Error getting objects or fields:", err);
-              // Return the partial context
-              resolve(appContext);
-            });
-          } else {
-            // Try a more basic approach
-            console.log("[DEBUG] Using alternative approach for data model");
-
-            // Use the global API to get field list
-            const app = qlik.currApp();
-
-            app.model.enigmaModel.evaluate('[$(=FieldList())]').then(function(fieldListStr) {
-              console.log("[DEBUG] Basic field list retrieved");
-
-              // Process field list
-              try {
-                // Parse field list (it's returned as a string)
-                let fieldNames = fieldListStr.replace(/[\[\]']/g, '').split(',');
-                fieldNames = fieldNames.map(f => f.trim());
-
-                appContext.fields = fieldNames.map(fieldName => {
-                  return { name: fieldName };
-                });
-
-                // Create a single table entry
-                appContext.tables = [{
-                  name: "Data Model",
-                  fields: fieldNames
-                }];
-
-                console.log("[DEBUG] Basic context collection complete");
-                resolve(appContext);
-              } catch (e) {
-                console.error("[DEBUG] Error in basic approach:", e);
-                // Return what we have
-                resolve(appContext);
-              }
-            }).catch(function(err) {
-              console.warn("[DEBUG] Error in basic field list:", err);
-              // Just return the app ID
-              resolve(appContext);
-            });
-          }
-        } catch (e) {
-          console.error("[DEBUG] Global error in getAppContext:", e);
-          reject("Error collecting app context: " + e.message);
+      var pLists = doc.createSessionObject({
+        qInfo: { qType: 'anthropic-context' },
+        qFieldListDef: {
+          qShowSystem: false, qShowHidden: false,
+          qShowDerivedFields: false, qShowSemantic: true, qShowSrcTables: true
+        },
+        qDimensionListDef: {
+          qType: 'dimension',
+          qData: { title: '/qMetaDef/title', defs: '/qDim/qFieldDefs' }
+        },
+        qMeasureListDef: {
+          qType: 'measure',
+          qData: { title: '/qMetaDef/title', def: '/qMeasure/qDef' }
         }
+      }).then(function(obj) {
+        return obj.getLayout().then(function(layout) {
+          var fieldItems = (layout.qFieldList && layout.qFieldList.qItems) || [];
+          appContext._sessionFields = fieldItems.map(function(i) { return i.qName; });
+
+          appContext.masterDimensions = ((layout.qDimensionList && layout.qDimensionList.qItems) || [])
+            .map(function(i) {
+              return {
+                name: (i.qMeta && i.qMeta.title) || (i.qData && i.qData.title) || "Unnamed",
+                fields: (i.qData && i.qData.defs) || []
+              };
+            });
+
+          appContext.masterMeasures = ((layout.qMeasureList && layout.qMeasureList.qItems) || [])
+            .map(function(i) {
+              return {
+                name: (i.qMeta && i.qMeta.title) || (i.qData && i.qData.title) || "Unnamed",
+                expr: (i.qData && i.qData.def) || ""
+              };
+            });
+
+          // Best-effort cleanup of the temporary session object.
+          if (obj.id && doc.destroySessionObject) {
+            doc.destroySessionObject(obj.id).catch(function() {});
+          }
+        });
+      }, function(err) {
+        console.warn("[DEBUG] field/master list session object failed:", err);
+      });
+
+      return Promise.all([pTitle, pTables, pLists]).then(function() {
+        // Flat field list = union of table fields, falling back to the session
+        // field list when tables couldn't be read.
+        var seen = {};
+        var flat = [];
+        appContext.tables.forEach(function(t) {
+          (t.fields || []).forEach(function(name) {
+            if (name && !seen[name]) { seen[name] = true; flat.push(name); }
+          });
+        });
+        if (flat.length === 0 && appContext._sessionFields) {
+          appContext._sessionFields.forEach(function(name) {
+            if (name && !seen[name]) { seen[name] = true; flat.push(name); }
+          });
+        }
+        if (flat.length > MAX_FIELDS) flat = flat.slice(0, MAX_FIELDS);
+        appContext.fields = flat.map(function(name) { return { name: name }; });
+        delete appContext._sessionFields;
+
+        console.log("[DEBUG] Context: " + appContext.tables.length + " tables, " +
+          appContext.fields.length + " fields, " +
+          appContext.masterMeasures.length + " measures, " +
+          appContext.masterDimensions.length + " dimensions");
+        return appContext;
       });
     },
 

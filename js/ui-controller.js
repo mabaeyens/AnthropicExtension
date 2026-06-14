@@ -1,5 +1,5 @@
-define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', './formatting', './config', './template'],
-  function ($, qlik, anthropicAPI, dataCollector, security, formatting, config, template) {
+define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', './formatting', './config', './template', './chart-builder'],
+  function ($, qlik, anthropicAPI, dataCollector, security, formatting, config, template, chartBuilder) {
     'use strict';
 
     let $container = null;
@@ -17,6 +17,46 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
     let conversation = [];
     let contextSent = false;
     let lastChartSignature = null;
+
+    // The wrapper for the exchange currently being rendered. Each turn (user
+    // bubble + its assistant reply) is grouped in a .chat-turn that is prepended,
+    // so the newest exchange sits at the top of the thread.
+    let $currentTurn = null;
+
+    // Threshold above which we warn before shipping chart data to the LLM.
+    const LARGE_PAYLOAD_BYTES = 65 * 1024;
+
+    // If the chart data about to be sent exceeds the size threshold, ask the
+    // user to confirm (large payloads mean high token cost / slow / costly
+    // requests). Returns true to proceed, false to abort. Null/empty payloads
+    // always proceed.
+    function confirmLargePayload(chartDataPayload) {
+      if (!chartDataPayload) return true;
+      var bytes = 0;
+      try { bytes = JSON.stringify(chartDataPayload).length; } catch (e) { return true; }
+      if (bytes <= LARGE_PAYLOAD_BYTES) return true;
+      var kb = Math.round(bytes / 1024);
+      return window.confirm(
+        'The selected chart data is about ' + kb + ' KB.\n\n' +
+        'Sending this much data to the AI will use a large number of tokens and ' +
+        'may be slow, costly, or hit the model\'s limits. Consider filtering the ' +
+        'data (selections) to reduce it.\n\nSend it anyway?');
+    }
+
+    // Clipboard fallback for non-secure contexts where navigator.clipboard is
+    // unavailable. Copies via a hidden textarea + execCommand.
+    function fallbackCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text == null ? '' : String(text);
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+      document.body.removeChild(ta);
+    }
 
     // Escape text before interpolating into HTML strings (chart titles are
     // user-controlled and may contain <, >, &, or quotes).
@@ -272,6 +312,22 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           self.startNewChat();
         });
 
+        // Delegated Copy button — copies the raw markdown of an assistant reply.
+        $container.find('#anthropic-conversation').on('click', '.chat-copy-btn', function() {
+          var $btn = $(this);
+          var raw  = $btn.closest('.chat-msg').data('raw') || '';
+          function flash() {
+            $btn.text('Copied ✓').addClass('copied');
+            setTimeout(function() { $btn.text('Copy').removeClass('copied'); }, 1500);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(raw).then(flash, function() { fallbackCopy(raw); flash(); });
+          } else {
+            fallbackCopy(raw);
+            flash();
+          }
+        });
+
         // Submit button
         $container.find('#submit-to-anthropic').on('click', function() {
           var userPrompt = $container.find('#anthropic-prompt').val();
@@ -283,11 +339,6 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           var app   = qlik.currApp();
           var appId = app.id;
 
-          // Show the user's question and a temporary "thinking" bubble, clear input
-          self.appendUserMessage(userPrompt);
-          var $thinking = self.appendThinkingMessage('Thinking…');
-          $container.find('#anthropic-prompt').val('');
-
           // Resend chart data only when the selected-chart set changed since the
           // last turn — otherwise prior turns already carry it in the history.
           var chartSig = selectedCharts.map(function(c) { return c.id; }).join('|');
@@ -295,6 +346,14 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           if (selectedCharts.length > 0 && chartSig !== lastChartSignature) {
             chartDataPayload = selectedCharts.map(function(c) { return c.data; });
           }
+
+          // Warn before sending a very large amount of data to the LLM.
+          if (!confirmLargePayload(chartDataPayload)) return;
+
+          // Show the user's question and a temporary "thinking" bubble, clear input
+          self.appendUserMessage(userPrompt);
+          var $thinking = self.appendThinkingMessage('Thinking…');
+          $container.find('#anthropic-prompt').val('');
 
           // Determine system prompt
           var systemPrompt = null;
@@ -329,6 +388,65 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           }
         });
 
+        // Suggest a chart — ask the AI for a chart spec and preview it live.
+        $container.find('#suggest-chart-button').on('click', function() {
+          var typed = $container.find('#anthropic-prompt').val();
+          var app   = qlik.currApp();
+          var appId = app.id;
+
+          var chartSig = selectedCharts.map(function(c) { return c.id; }).join('|');
+          var chartDataPayload = null;
+          if (selectedCharts.length > 0 && chartSig !== lastChartSignature) {
+            chartDataPayload = selectedCharts.map(function(c) { return c.data; });
+          }
+
+          // Warn before sending a very large amount of data to the LLM.
+          if (!confirmLargePayload(chartDataPayload)) return;
+
+          var displayText = (typed && typed.trim())
+            ? typed.trim()
+            : '📊 Suggest a chart for the selected data';
+          self.appendUserMessage(displayText);
+          var $thinking = self.appendThinkingMessage('Designing a chart…');
+          $container.find('#anthropic-prompt').val('');
+
+          // Follow up on the most recent assistant response (if any) so the
+          // suggestion builds on the prior analysis, in addition to any prompt.
+          var lastResponse = '';
+          for (var i = conversation.length - 1; i >= 0; i--) {
+            if (conversation[i].role === 'assistant') { lastResponse = conversation[i].content; break; }
+          }
+          var typedTrim = (typed && typed.trim()) ? typed.trim() : '';
+          var basePrompt;
+          if (lastResponse) {
+            basePrompt = 'Use your previous response as context for this chart suggestion:\n' +
+              '"""\n' + lastResponse + '\n"""\n\n' +
+              (typedTrim || 'Suggest a chart that best visualizes the key insight from that response.');
+          } else {
+            basePrompt = typedTrim || 'Suggest a chart that best visualizes the selected data.';
+          }
+          var requestData = {
+            userPrompt:   basePrompt + chartBuilder.buildPromptSuffix(),
+            chartData:    chartDataPayload,
+            systemPrompt: 'You are a Qlik Sense visualization expert. When asked to ' +
+              'suggest a chart, reply with ONLY the requested fenced qlik-chart JSON ' +
+              'block — no prose, no explanation.',
+            history:      conversation.slice()
+          };
+
+          var includeContext = $container.find('#include-context').is(':checked');
+          if (includeContext && !contextSent) {
+            dataCollector.getAppContextCached().then(function(context) {
+              requestData.context = context;
+              self.processChartSuggestion(appId, requestData, $thinking, chartSig);
+            }).catch(function(error) {
+              self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
+            });
+          } else {
+            self.processChartSuggestion(appId, requestData, $thinking, chartSig);
+          }
+        });
+
         // Analysis style toggle for custom prompt
         $container.find("input[name='analysis-style']").on('change', function() {
           if ($('#analysis-style-custom').is(':checked')) {
@@ -357,8 +475,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           function(response, metrics) {
             var responseText = anthropicAPI.formatResponse(response);
             var html = formatting.formatResponseText(responseText);
+            html += self.renderCopyButton();
             if (metrics) html += self.renderTokenUsage(metrics, responseText);
             self.replaceThinking($thinking, html);
+            // Stash the raw markdown so the Copy button copies source, not HTML.
+            if ($thinking && $thinking.length) $thinking.data('raw', responseText);
 
             // Persist this turn so follow-up questions retain context.
             conversation.push({ role: 'user', content: metrics.builtText });
@@ -372,18 +493,118 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         );
       },
 
+      // Chart-suggestion flow: same request machinery, but parse the reply as a
+      // chart spec and render a live preview via the in-session Qlik viz API.
+      // Falls back to normal markdown when no valid spec is returned.
+      processChartSuggestion: function(appId, requestData, $thinking, chartSig) {
+        var self = this;
+        anthropicAPI.sendToAnthropic(
+          appId,
+          requestData,
+          function(response, metrics) {
+            var responseText = anthropicAPI.formatResponse(response);
+            var spec = chartBuilder.parseChartSpec(responseText);
+
+            if (spec) {
+              // Render preview into the assistant bubble.
+              self.replaceThinking($thinking, '<div class="anthropic-chart-intro">Suggested chart:</div>');
+              $thinking.data('raw', responseText);
+              chartBuilder.renderPreview(spec, $thinking, function(s, $card) {
+                self.handleAddToSheet(s, $card);
+              }).catch(function(err) {
+                var msg = (err && err.message) ? err.message : String(err);
+                $thinking.append('<div class="anthropic-chart-error">' +
+                  escapeHtml(msg) + '</div>');
+              });
+            } else {
+              // No usable spec — show the model's text so the user sees why.
+              var html = formatting.formatResponseText(responseText);
+              html += self.renderCopyButton();
+              self.replaceThinking($thinking, html);
+              $thinking.data('raw', responseText);
+              self.appendSystemNote(formatting.formatErrorMessage(
+                'Could not parse a chart specification from the response.'));
+            }
+
+            // Persist the turn so follow-ups keep context.
+            conversation.push({ role: 'user', content: metrics.builtText });
+            conversation.push({ role: 'assistant', content: responseText });
+            if (requestData.context) contextSent = true;
+            if (requestData.chartData) lastChartSignature = chartSig;
+          },
+          function(error) {
+            self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+          }
+        );
+      },
+
+      // Place a previewed chart onto the current sheet. Requires Edit mode;
+      // if the sheet is packed, offers to create a new sheet instead.
+      handleAddToSheet: function(spec, $card) {
+        var $actions = $card.find('.anthropic-chart-actions');
+        var $add = $card.find('.anthropic-chart-add');
+
+        if (!chartBuilder.isEditMode()) {
+          $card.find('.anthropic-chart-hint').remove();
+          $actions.append('<span class="anthropic-chart-hint">Open the sheet in Edit ' +
+            'mode to add charts.</span>');
+          return;
+        }
+
+        $add.prop('disabled', true).text('Adding…');
+        chartBuilder.addToSheet(spec).then(function(result) {
+          if (result && result.packed) {
+            $actions.empty();
+            $actions.append('<span class="anthropic-chart-hint">Sheet is full — ' +
+              'existing charts were left untouched.</span>');
+            var $newSheet = $('<button type="button" class="lui-button anthropic-chart-add">Create a new sheet</button>');
+            $actions.append($newSheet);
+            $newSheet.on('click', function() {
+              $newSheet.prop('disabled', true).text('Creating…');
+              chartBuilder.createSheetWithChart(spec).then(function() {
+                $actions.html('<span class="anthropic-chart-ok">Created a new sheet ✓</span>');
+              }).catch(function(err) {
+                $newSheet.prop('disabled', false).text('Create a new sheet');
+                $actions.append('<div class="anthropic-chart-error">' +
+                  escapeHtml((err && err.message) || String(err)) + '</div>');
+              });
+            });
+          } else {
+            $add.text('Added to sheet ✓').addClass('added');
+          }
+        }).catch(function(err) {
+          var msg = (err && err.message) || String(err);
+          if (msg === 'NOT_EDIT_MODE') {
+            $add.prop('disabled', false).text('Add to sheet');
+            $actions.append('<span class="anthropic-chart-hint">Open the sheet in Edit ' +
+              'mode to add charts.</span>');
+          } else {
+            $add.prop('disabled', false).text('Add to sheet');
+            $actions.append('<div class="anthropic-chart-error">' + escapeHtml(msg) + '</div>');
+          }
+        });
+      },
+
       // ── Conversation thread helpers ───────────────────────────────────────
 
       appendUserMessage: function(text) {
-        // .text() escapes; CSS keeps newlines (white-space: pre-wrap)
-        $container.find('#anthropic-conversation')
+        // Start a new turn wrapper and prepend it so the newest exchange is on
+        // top. .text() escapes; CSS keeps newlines (white-space: pre-wrap).
+        $currentTurn = $('<div class="chat-turn"></div>')
           .append($('<div class="chat-msg user"></div>').text(text));
+        $container.find('#anthropic-conversation').prepend($currentTurn);
         this.scrollConversation();
       },
 
       appendThinkingMessage: function(text) {
         var $msg = $('<div class="chat-msg assistant thinking"></div>').text(text || 'Thinking…');
-        $container.find('#anthropic-conversation').append($msg);
+        // Append into the current turn so the assistant reply stays below its
+        // question; fall back to the container if no turn is active.
+        if ($currentTurn && $currentTurn.length) {
+          $currentTurn.append($msg);
+        } else {
+          $container.find('#anthropic-conversation').append($msg);
+        }
         this.scrollConversation();
         return $msg;
       },
@@ -398,20 +619,35 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
       },
 
       appendSystemNote: function(html) {
-        $container.find('#anthropic-conversation')
-          .append('<div class="chat-msg assistant">' + html + '</div>');
+        var $msg = $('<div class="chat-msg assistant"></div>').html(html);
+        if ($currentTurn && $currentTurn.length) {
+          $currentTurn.append($msg);
+        } else {
+          $container.find('#anthropic-conversation').append($msg);
+        }
         this.scrollConversation();
       },
 
       scrollConversation: function() {
+        // Newest exchange is at the top, so keep the view pinned there.
         var el = $container.find('.anthropic-panel-body')[0];
-        if (el) el.scrollTop = el.scrollHeight;
+        if (el) el.scrollTop = 0;
+      },
+
+      // Copy button shown in each assistant message footer. The raw markdown is
+      // stored on the message element so the delegated handler can copy the
+      // source text (not the rendered HTML).
+      renderCopyButton: function() {
+        return '<div class="chat-msg-footer">' +
+          '<button type="button" class="chat-copy-btn" title="Copy response">Copy</button>' +
+          '</div>';
       },
 
       startNewChat: function() {
         conversation = [];
         contextSent = false;
         lastChartSignature = null;
+        $currentTurn = null;
         $container.find('#anthropic-conversation').empty();
       },
 

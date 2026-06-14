@@ -87,6 +87,7 @@ define([], function() {
           </div>
           <div class="submit-area">
             <button id="submit-to-anthropic" class="lui-button">Submit</button>
+            <button id="suggest-chart-button" class="lui-button" title="Ask the AI to propose a Qlik chart and preview it">Suggest a chart</button>
           </div>
           <div id="debug-area" class="debug-area" style="display:none; margin-top:10px; border-top:1px solid #ccc; padding-top:10px;">
             <button id="test-direct-api" class="lui-button">Test Direct API Call</button>
