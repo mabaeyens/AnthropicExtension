@@ -58,18 +58,21 @@ define(['jquery', './security', './config', './data-format'], function($, securi
         const payload = {
           model: config.API.MODEL,
           max_tokens: config.API.MAX_TOKENS,
-          messages: [{
-            role: "user",
-            content: data.userPrompt
-          }],
+          messages: [],
           system: data.systemPrompt || config.API.SYSTEM_PROMPT
         };
-        
+
         // Log which system prompt is being used
         console.log("[DEBUG] Using system prompt:", payload.system.substring(0, 50) + "...");
-    
-        // Build the message content and get metrics
+
+        // Build this turn's user-message text (chart data + context + question)
         const messageMetrics = this.buildMessageContent(payload, data);
+
+        // Prepend any prior conversation turns so the model keeps context across
+        // questions, then append this turn's user message.
+        payload.messages = (data.history || []).concat([
+          { role: "user", content: messageMetrics.builtText }
+        ]);
     
         // Check payload size
         const payloadString = JSON.stringify(payload);
@@ -244,9 +247,9 @@ define(['jquery', './security', './config', './data-format'], function($, securi
         console.log(`[DEBUG] Total message size: ${metricReport.totalChars} chars, ~${metricReport.estimatedTokens} tokens`);
       }
       
-      // Set the message content
-      payload.messages[0].content = messageText;
-      
+      // Expose the built user-turn text so the caller can append it to history.
+      metricReport.builtText = messageText;
+
       return metricReport;
     },
     

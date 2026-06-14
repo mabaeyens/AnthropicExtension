@@ -1,26 +1,38 @@
-define([], function() {
+define(['./lib/marked.min'], function(marked) {
   'use strict';
+
+  // Configure the bundled Markdown parser once. gfm enables tables/strikethrough;
+  // breaks turns single newlines into <br> (Claude often relies on them).
+  if (marked && typeof marked.setOptions === 'function') {
+    marked.setOptions({ gfm: true, breaks: true });
+  }
 
   return {
     /**
-     * Format the API response text with markdown-like formatting
-     * @param {string} text - The response text
+     * Render the API response (Markdown) to HTML using the bundled marked parser.
+     * Falls back to a minimal replacer if marked failed to load.
+     * @param {string} text - The response text (Markdown)
      * @returns {string} - Formatted HTML
      */
     formatResponseText: function (text) {
       if (!text) return '';
-      
-      // Simple markdown-like formatting
+
+      if (marked && typeof marked.parse === 'function') {
+        try {
+          return marked.parse(text);
+        } catch (e) {
+          // fall through to the simple replacer below
+        }
+      }
+
+      // Fallback: simple markdown-like formatting
       let formatted = text
         .replace(/\n\n/g, '<br><br>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>');
-
-      // Handle code blocks
       formatted = formatted.replace(/```([\s\S]*?)```/g, function (match, code) {
         return '<pre><code>' + code + '</code></pre>';
       });
-
       return formatted;
     },
     

@@ -92,9 +92,12 @@ define([], function() {
             <button id="test-direct-api" class="lui-button">Test Direct API Call</button>
           </div>
         </div>
-        <div class="anthropic-output-area">
-          <h4>AI Response</h4>
-          <div id="anthropic-response" class="response-container"></div>
+        <div class="anthropic-output-area anthropic-conversation-area">
+          <div class="anthropic-conversation-header">
+            <h4>AI Conversation</h4>
+            <button id="anthropic-new-chat" title="Start a new conversation">New chat</button>
+          </div>
+          <div id="anthropic-conversation"></div>
         </div>
       </div>
     </div>

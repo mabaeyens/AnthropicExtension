@@ -9,6 +9,15 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
     let selectedCharts = [];
     const MAX_CHARTS = 5;
 
+    // Conversation memory. `conversation` holds the API message turns
+    // ({ role, content }) and persists across sheet changes / new chart picks
+    // (the widget lives in document.body and is never re-initialized). Chart data
+    // is only resent when the selection changes; app context only on the first
+    // turn — prior turns already carry that context in the history.
+    let conversation = [];
+    let contextSent = false;
+    let lastChartSignature = null;
+
     // Escape text before interpolating into HTML strings (chart titles are
     // user-controlled and may contain <, >, &, or quotes).
     function escapeHtml(value) {
@@ -118,21 +127,23 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
     return {
 
       testDirectApiCall: function(appId) {
-        var $responseArea = $container.find('#anthropic-response');
-        $responseArea.html(formatting.formatLoadingMessage('Testing API connection...'));
+        var self = this;
+        var $thinking = this.appendThinkingMessage('Testing API connection…');
         anthropicAPI.testConnection(
           appId,
           function(response) {
             var responseText = anthropicAPI.formatResponse(response);
-            $responseArea.html('<div style="color:green">API test successful! Response: ' + responseText + '</div>');
+            self.replaceThinking($thinking, '<div style="color:green">API test successful! Response: ' + escapeHtml(responseText) + '</div>');
           },
           function(error) {
-            $responseArea.html(formatting.formatErrorMessage(error));
+            self.replaceThinking($thinking, formatting.formatErrorMessage(error));
           }
         );
       },
 
       initUI: function($element, layout) {
+        var self = this;
+
         // Inject the floating widget into body (persists across sheet navigation)
         $('body').append(template);
         $container = $('#anthropic-floating-widget').find('.anthropic-extension-container');
@@ -142,13 +153,21 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           var isOpen = $('#anthropic-panel').hasClass('is-open');
           $('#anthropic-panel').toggleClass('is-open', !isOpen);
           $('#anthropic-toggle-btn').toggleClass('is-open', !isOpen);
+          // Collapsing must release chart-selection mode so its capture-phase
+          // document click handler stops intercepting clicks on the Qlik UI.
+          if (isOpen && selectionModeActive) self.toggleChartSelectionMode();
         });
 
         // Close button
         $('#anthropic-panel-close').on('click', function() {
           $('#anthropic-panel').removeClass('is-open');
           $('#anthropic-toggle-btn').removeClass('is-open');
+          if (selectionModeActive) self.toggleChartSelectionMode();
         });
+
+        // Let the user drag the panel out of the way (it can otherwise cover
+        // charts during selection).
+        this.makePanelDraggable();
 
         // Placeholder in the sheet object
         $element.html(
@@ -171,6 +190,37 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
 
         this.setupEventHandlers();
         console.log('UI initialized — floating widget injected into body');
+      },
+
+      // Drag the panel by its header. Pins the panel to viewport coords (it
+      // normally sits in the bottom-right flex anchor); the inline left/top
+      // persist across open/close so the chosen spot sticks for the session.
+      makePanelDraggable: function() {
+        var $panel = $('#anthropic-panel');
+        var $header = $panel.find('.anthropic-panel-header');
+        var dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+        $header.on('mousedown', function(e) {
+          if ($(e.target).closest('#anthropic-panel-close').length) return; // don't hijack close
+          var rect = $panel[0].getBoundingClientRect();
+          startX = e.clientX; startY = e.clientY;
+          startLeft = rect.left; startTop = rect.top;
+          dragging = true;
+          $panel.css({ position: 'fixed', left: startLeft + 'px', top: startTop + 'px',
+                       right: 'auto', bottom: 'auto', margin: 0 });
+          e.preventDefault();
+        });
+
+        $(document).on('mousemove.anthropicDrag', function(e) {
+          if (!dragging) return;
+          var maxLeft = Math.max(0, window.innerWidth  - $panel.outerWidth());
+          var maxTop  = Math.max(0, window.innerHeight - $panel.outerHeight());
+          var left = Math.min(Math.max(0, startLeft + (e.clientX - startX)), maxLeft);
+          var top  = Math.min(Math.max(0, startTop  + (e.clientY - startY)), maxTop);
+          $panel.css({ left: left + 'px', top: top + 'px' });
+        });
+
+        $(document).on('mouseup.anthropicDrag', function() { dragging = false; });
       },
 
       // Render the api-key status line. Key management lives entirely in the
@@ -217,31 +267,34 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           renderChips();
         });
 
+        // New chat — reset conversation memory (keeps selected charts)
+        $container.find('#anthropic-new-chat').on('click', function() {
+          self.startNewChat();
+        });
+
         // Submit button
         $container.find('#submit-to-anthropic').on('click', function() {
-          var $responseArea = $container.find('#anthropic-response');
-          $responseArea.html(formatting.formatLoadingMessage('Processing request...'));
+          var userPrompt = $container.find('#anthropic-prompt').val();
+          if (!userPrompt || !userPrompt.trim()) {
+            self.appendSystemNote(formatting.formatErrorMessage('Please enter a question or prompt.'));
+            return;
+          }
 
           var app   = qlik.currApp();
           var appId = app.id;
 
-          var userPrompt = $container.find('#anthropic-prompt').val();
-          if (!userPrompt) {
-            $responseArea.html(formatting.formatErrorMessage('Please enter a question or prompt.'));
-            return;
-          }
+          // Show the user's question and a temporary "thinking" bubble, clear input
+          self.appendUserMessage(userPrompt);
+          var $thinking = self.appendThinkingMessage('Thinking…');
+          $container.find('#anthropic-prompt').val('');
 
-          // Chart data — already optimized at selection time; pass directly
+          // Resend chart data only when the selected-chart set changed since the
+          // last turn — otherwise prior turns already carry it in the history.
+          var chartSig = selectedCharts.map(function(c) { return c.id; }).join('|');
           var chartDataPayload = null;
-          if (selectedCharts.length > 0) {
+          if (selectedCharts.length > 0 && chartSig !== lastChartSignature) {
             chartDataPayload = selectedCharts.map(function(c) { return c.data; });
-          } else {
-            $responseArea.html(formatting.formatWarningMessage(
-              'No charts selected. Your question will be answered without chart context.'
-            ));
           }
-
-          var optimizationSettings = self.getOptimizationSettings();
 
           // Determine system prompt
           var systemPrompt = null;
@@ -256,22 +309,23 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           }
 
           var requestData = {
-            userPrompt:  userPrompt,
-            chartData:   chartDataPayload,
-            systemPrompt: systemPrompt
+            userPrompt:   userPrompt,
+            chartData:    chartDataPayload,
+            systemPrompt: systemPrompt,
+            history:      conversation.slice()
           };
 
+          // App context only on the first turn (subsequent turns inherit it via history)
           var includeContext = $container.find('#include-context').is(':checked');
-          if (includeContext) {
-            $responseArea.html(formatting.formatLoadingMessage('Collecting app context...'));
+          if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
               requestData.context = context;
-              self.processAnthropicRequest(appId, requestData, $responseArea);
+              self.processAnthropicRequest(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
-              $responseArea.html(formatting.formatErrorMessage('Error collecting app context: ' + error));
+              self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
             });
           } else {
-            self.processAnthropicRequest(appId, requestData, $responseArea);
+            self.processAnthropicRequest(appId, requestData, $thinking, chartSig);
           }
         });
 
@@ -295,40 +349,85 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         console.log('Event handlers set up');
       },
 
-      processAnthropicRequest: function(appId, requestData, $responseArea) {
-        $responseArea.html(formatting.formatLoadingMessage('Preparing data for Anthropic API...'));
-
-        var requestMetrics = null;
+      processAnthropicRequest: function(appId, requestData, $thinking, chartSig) {
+        var self = this;
         anthropicAPI.sendToAnthropic(
           appId,
           requestData,
           function(response, metrics) {
-            requestMetrics = metrics;
-            var responseText    = anthropicAPI.formatResponse(response);
-            var formattedResponse = formatting.formatResponseText(responseText);
+            var responseText = anthropicAPI.formatResponse(response);
+            var html = formatting.formatResponseText(responseText);
+            if (metrics) html += self.renderTokenUsage(metrics, responseText);
+            self.replaceThinking($thinking, html);
 
-            var resultHtml = formattedResponse;
-            if (requestMetrics) {
-              resultHtml +=
-                '<div class="token-usage-info">' +
-                '<details>' +
-                '<summary>LLM Token Usage</summary>' +
-                '<div class="token-details">' +
-                '<p>Prompt: ~' + requestMetrics.estimatedTokens + ' tokens (' + requestMetrics.totalChars + ' chars)</p>' +
-                '<p>Response: ~' + Math.ceil(responseText.length / 4) + ' tokens (' + responseText.length + ' chars)</p>' +
-                (requestMetrics.chartDataReduction
-                  ? '<p>Data optimization: ' + requestMetrics.chartDataReduction + '% reduction in size (' +
-                    (requestMetrics.dataSampled ? 'sampled data, ' : '') +
-                    (requestMetrics.actualRows || requestMetrics.rowCount) + ' rows from ' + requestMetrics.rowCount + ' total)</p>'
-                  : '') +
-                '</div></details></div>';
-            }
-            $responseArea.html(resultHtml);
+            // Persist this turn so follow-up questions retain context.
+            conversation.push({ role: 'user', content: metrics.builtText });
+            conversation.push({ role: 'assistant', content: responseText });
+            if (requestData.context) contextSent = true;
+            if (requestData.chartData) lastChartSignature = chartSig;
           },
           function(error) {
-            $responseArea.html(formatting.formatErrorMessage(error));
+            self.replaceThinking($thinking, formatting.formatErrorMessage(error));
           }
         );
+      },
+
+      // ── Conversation thread helpers ───────────────────────────────────────
+
+      appendUserMessage: function(text) {
+        // .text() escapes; CSS keeps newlines (white-space: pre-wrap)
+        $container.find('#anthropic-conversation')
+          .append($('<div class="chat-msg user"></div>').text(text));
+        this.scrollConversation();
+      },
+
+      appendThinkingMessage: function(text) {
+        var $msg = $('<div class="chat-msg assistant thinking"></div>').text(text || 'Thinking…');
+        $container.find('#anthropic-conversation').append($msg);
+        this.scrollConversation();
+        return $msg;
+      },
+
+      replaceThinking: function($msg, html) {
+        if ($msg && $msg.length) {
+          $msg.removeClass('thinking').html(html);
+          this.scrollConversation();
+        } else {
+          this.appendSystemNote(html);
+        }
+      },
+
+      appendSystemNote: function(html) {
+        $container.find('#anthropic-conversation')
+          .append('<div class="chat-msg assistant">' + html + '</div>');
+        this.scrollConversation();
+      },
+
+      scrollConversation: function() {
+        var el = $container.find('.anthropic-panel-body')[0];
+        if (el) el.scrollTop = el.scrollHeight;
+      },
+
+      startNewChat: function() {
+        conversation = [];
+        contextSent = false;
+        lastChartSignature = null;
+        $container.find('#anthropic-conversation').empty();
+      },
+
+      renderTokenUsage: function(metrics, responseText) {
+        return '<div class="token-usage-info">' +
+          '<details>' +
+          '<summary>LLM Token Usage</summary>' +
+          '<div class="token-details">' +
+          '<p>Prompt: ~' + metrics.estimatedTokens + ' tokens (' + metrics.totalChars + ' chars)</p>' +
+          '<p>Response: ~' + Math.ceil(responseText.length / 4) + ' tokens (' + responseText.length + ' chars)</p>' +
+          (metrics.chartDataReduction
+            ? '<p>Data optimization: ' + metrics.chartDataReduction + '% reduction in size (' +
+              (metrics.dataSampled ? 'sampled data, ' : '') +
+              (metrics.actualRows || metrics.rowCount) + ' rows from ' + metrics.rowCount + ' total)</p>'
+            : '') +
+          '</div></details></div>';
       },
 
       getOptimizationSettings: function() {
@@ -436,9 +535,14 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
       },
 
       sendRequest: function(appId, userPrompt, chartData, context) {
-        var $responseArea = $container.find('#anthropic-response');
-        $responseArea.html(formatting.formatLoadingMessage('Processing legacy request...'));
-        this.processAnthropicRequest(appId, { userPrompt: userPrompt, chartData: chartData, context: context }, $responseArea);
+        this.appendUserMessage(userPrompt);
+        var $thinking = this.appendThinkingMessage('Thinking…');
+        this.processAnthropicRequest(
+          appId,
+          { userPrompt: userPrompt, chartData: chartData, context: context, history: conversation.slice() },
+          $thinking,
+          null
+        );
       }
     };
   });

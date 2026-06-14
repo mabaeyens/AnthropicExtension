@@ -13,14 +13,13 @@
   pointer-events: none;
 }
 
-/* Re-enable pointer events on interactive children */
-#anthropic-floating-widget > * {
-  pointer-events: all;
-}
-
 /* ── Toggle button ──────────────────────────────────────────────────────── */
 
 .anthropic-toggle-btn {
+  /* Always interactive (the container is pointer-events:none). The panel
+     manages its own pointer-events via .is-open so it never traps clicks on
+     the Qlik UI when collapsed. */
+  pointer-events: all;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -49,7 +48,8 @@
 /* ── Panel card ─────────────────────────────────────────────────────────── */
 
 .anthropic-panel {
-  width: 380px;
+  width: 760px;
+  max-width: calc(100vw - 48px);
   max-height: calc(100vh - 110px);
   background: #ffffff;
   border-radius: 12px;
@@ -57,17 +57,22 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Hidden by default — toggled via .is-open */
+  /* Hidden by default — toggled via .is-open. visibility:hidden makes the
+     collapsed panel fully inert (no hit-testing) so it never blocks the Qlik
+     UI underneath; the 0.22s delay lets the fade-out finish first. */
   opacity: 0;
   transform: translateY(16px) scale(0.97);
   pointer-events: none;
-  transition: opacity 0.22s ease, transform 0.22s ease;
+  visibility: hidden;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
 }
 
 .anthropic-panel.is-open {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: all;
+  visibility: visible;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0s;
 }
 
 /* Qlik's client sets user-select:none globally; the body-injected widget
@@ -89,6 +94,9 @@
   background-color: #009845;
   color: white;
   flex-shrink: 0;
+  /* Drag handle for moving the panel out of the way */
+  cursor: move;
+  user-select: none;
 }
 
 .anthropic-panel-title {
@@ -401,6 +409,149 @@
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* ── Conversation thread ────────────────────────────────────────────────── */
+
+.anthropic-conversation-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.anthropic-conversation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.anthropic-conversation-header h4 {
+  margin: 0;
+  color: #333;
+}
+
+#anthropic-new-chat {
+  padding: 2px 10px;
+  font-size: 12px;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#anthropic-new-chat:hover {
+  background-color: #e3e3e3;
+}
+
+#anthropic-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-msg {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 92%;
+  word-wrap: break-word;
+}
+
+.chat-msg.user {
+  align-self: flex-end;
+  background-color: #e8f5ee;
+  border: 1px solid #b9e3cc;
+  color: #1d4a33;
+  white-space: pre-wrap;
+}
+
+.chat-msg.assistant {
+  align-self: flex-start;
+  background-color: #f7f7f8;
+  border: 1px solid #e3e3e6;
+  color: #222;
+}
+
+.chat-msg.assistant.thinking {
+  color: #888;
+  font-style: italic;
+}
+
+/* ── Markdown rendering inside assistant messages ───────────────────────── */
+
+.chat-msg.assistant h1,
+.chat-msg.assistant h2,
+.chat-msg.assistant h3,
+.chat-msg.assistant h4 {
+  margin: 10px 0 6px;
+  line-height: 1.25;
+  color: #1a1a1a;
+}
+.chat-msg.assistant h1 { font-size: 19px; }
+.chat-msg.assistant h2 { font-size: 17px; }
+.chat-msg.assistant h3 { font-size: 15px; }
+.chat-msg.assistant h4 { font-size: 14px; }
+
+.chat-msg.assistant p { margin: 6px 0; }
+
+.chat-msg.assistant ul,
+.chat-msg.assistant ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.chat-msg.assistant li { margin: 2px 0; }
+
+.chat-msg.assistant table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.chat-msg.assistant th,
+.chat-msg.assistant td {
+  border: 1px solid #d5d5d8;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.chat-msg.assistant th {
+  background-color: #eef0f2;
+  font-weight: 600;
+}
+
+.chat-msg.assistant tr:nth-child(even) td {
+  background-color: #fafafa;
+}
+
+.chat-msg.assistant code {
+  background-color: #eceef0;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12.5px;
+}
+
+.chat-msg.assistant pre {
+  margin: 8px 0;
+}
+
+.chat-msg.assistant pre code {
+  background: none;
+  padding: 0;
+}
+
+.chat-msg.assistant blockquote {
+  margin: 8px 0;
+  padding: 2px 12px;
+  border-left: 3px solid #009845;
+  color: #555;
+}
+
+.chat-msg.assistant a { color: #009845; }
+
+.chat-msg.assistant > :first-child { margin-top: 0; }
+.chat-msg.assistant > :last-child { margin-bottom: 0; }
 
 .loading {
   color: #666;

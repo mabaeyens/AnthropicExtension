@@ -17,7 +17,7 @@ define([], function() {
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
     VERSION: '0.2.0',
-    BUILD: 8,
+    BUILD: 11,
 
     // API Configuration
     API: {

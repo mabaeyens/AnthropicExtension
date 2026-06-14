@@ -47,18 +47,23 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           return;
         }
       
-        // Extract the object ID. Qlik sets the real object id on the sheet
-        // cell's `tid` attribute — this is reliable across versions. The
-        // qv-object-<id> CSS class is a fragile fallback because the element
-        // also carries a qv-object-<type> class (e.g. qv-object-barchart),
-        // and the old regex could grab the type instead of the id.
-        const objectId = this.extractObjectId($target, $vizObject);
+        // Skip clicks on the container that holds our own extension object.
+        if ($vizObject.find('#' + extensionId).length ||
+            $vizObject.find('[data-object-id="' + extensionId + '"]').length) {
+          console.log("[DEBUG] Ignoring click on container with extension");
+          return;
+        }
 
-        if (!objectId) {
-          console.log("[DEBUG] Could not extract object ID from element");
+        // Gather every plausible object id near the click (short engine ids and
+        // GUIDs, ordered by proximity) rather than guessing a single one. We then
+        // let the Qlik engine decide which id actually resolves to a chart — so a
+        // wrong token (e.g. the chart type, or the sheet id) is simply skipped.
+        const candidates = this.collectCandidateIds($target, $vizObject);
+
+        if (!candidates.length) {
+          console.log("[DEBUG] No candidate object ids found near click");
           // Surface a copyable DOM dump so the id-bearing attribute can be
-          // identified without another blind round-trip. Only fires when the
-          // GUID-by-shape walk found nothing (rare).
+          // identified without another blind round-trip.
           if ($vizObject.length && selectionCallback) {
             e.preventDefault();
             e.stopPropagation();
@@ -67,49 +72,29 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           }
           return;
         }
-      
-        // Skip if this is our extension object
-        if (objectId === extensionId) {
-          console.log("[DEBUG] Ignoring click on extension object");
-          return;
-        }
-      
-        // Skip if this object contains our extension
-        if ($vizObject.find('#' + extensionId).length ||
-            $vizObject.find('[data-object-id="' + extensionId + '"]').length) {
-          console.log("[DEBUG] Ignoring click on container with extension");
-          return;
-        }
-      
-        console.log("[DEBUG] Valid visualization selected:", objectId);
-      
-        if (objectId) {
-          console.log("[DEBUG] Visualization clicked in selection mode:", objectId);
 
-          // Prevent default behavior. stopImmediatePropagation is essential:
-          // this handler runs in the capture phase (see addEventListener below),
-          // so stopping propagation here keeps the click from ever reaching
-          // Qlik's own chart handlers, which would otherwise select values.
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
+        console.log("[DEBUG] Candidate ids:", candidates.join(', '));
 
-          // Get the object data
-          this.getObjectData(objectId).then(function(chartData) {
-            // Call the callback with the chart data
-            if (selectionCallback) {
-              selectionCallback(objectId, chartData);
-            }
-          }.bind(this)).catch(function(error) {
-            console.error("[DEBUG] Error getting object data for", objectId, ":", error);
-            // Signal failure cleanly — null id/data tell the UI to show an error
-            // without storing invalid data as a chart selection. Pass the real
-            // error so the panel can surface why it failed.
-            if (selectionCallback) {
-              selectionCallback(null, null, { objectId: objectId, error: error });
-            }
-          });
-        }
+        // Prevent default behavior. stopImmediatePropagation is essential: this
+        // handler runs in the capture phase (see addEventListener below), so
+        // stopping propagation keeps the click from ever reaching Qlik's own chart
+        // handlers, which would otherwise select values inside the chart.
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        this.getObjectDataFromCandidates(candidates).then(function(result) {
+          if (selectionCallback) selectionCallback(result.id, result.data);
+        }).catch(function(error) {
+          console.error("[DEBUG] No candidate id resolved to a usable chart:", error);
+          if (selectionCallback) {
+            selectionCallback(null, null, {
+              objectId: candidates[0],
+              error: error,
+              dom: this.describeDomChain($target)
+            });
+          }
+        }.bind(this));
       }.bind(this);
 
       // Attach the handler in the CAPTURE phase (third arg = true) so it runs
@@ -180,36 +165,161 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      * @returns {string|null} the object id
      */
     extractObjectId: function ($target, $vizObject) {
+      // Qlik object ids come in two shapes:
+      //   • full GUID for newer objects (e.g. 7e74e87a-7ef8-4bf2-a142-b4cabb3dda2a)
+      //   • short engine id for objects created in older apps (e.g. "AzPdbJd",
+      //     "DAjgzV", "FpRLjYw") — mixed-case alphanumeric, no hyphens.
       var GUID = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+      var ID_LIKE = /^[A-Za-z0-9_-]{3,}$/;
 
-      // 1. Find the object id by its SHAPE (a GUID) rather than by a specific
-      //    attribute name. Walk up from the clicked element and return the
-      //    nearest attribute value that contains a GUID. This works across Qlik
-      //    versions and viz types: native charts, master-item vizzes, and
-      //    Visualization-bundle vizzes (e.g. distributionplot) whose .qv-object
-      //    class carries only the TYPE (qv-object-distributionplot), not the id.
+      // Scan from the clicked element up to (and a few levels past) the .qv-object
+      // container. Bounding the walk to the object's own cell keeps us from
+      // grabbing the SHEET's or APP's GUID from a higher ancestor — a real risk
+      // in older apps whose charts use short ids that don't carry their own GUID.
       var el = $target[0];
-      while (el && el !== document.body) {
+      var guidHit = null, namedHit = null;
+      var sawObject = false, extra = 0, depth = 0;
+      while (el && el !== document.body && depth < 15 && extra <= 3) {
+        if (el.attributes) {
+          // Prefer a GUID found in any attribute (covers new objects + bundle
+          // vizzes like distributionplot whose .qv-object class has only the type).
+          if (!guidHit) {
+            for (var i = 0; i < el.attributes.length; i++) {
+              var m = (el.attributes[i].value || '').match(GUID);
+              if (m && m[0] !== extensionId) { guidHit = m[0]; break; }
+            }
+          }
+          // Otherwise remember the first named id attribute — this is where short
+          // engine ids live (tid on the cell, or data-qid/data-object-id).
+          if (!namedHit) {
+            var named = el.getAttribute('tid') ||
+                        el.getAttribute('data-qid') ||
+                        el.getAttribute('data-object-id');
+            if (named && named !== extensionId && ID_LIKE.test(named)) namedHit = named;
+          }
+        }
+        if (guidHit) break; // GUID is the strongest signal — stop early
+        if ($vizObject[0] && el === $vizObject[0]) sawObject = true;
+        if (sawObject) extra++;
+        el = el.parentElement;
+        depth++;
+      }
+      if (guidHit) return guidHit;
+      if (namedHit) return namedHit;
+
+      // Class fallback on .qv-object: a GUID, else a qv-object-<token> that looks
+      // like an engine id. Chart TYPE tokens (barchart/kpi/table/distributionplot)
+      // are all-lowercase; engine ids contain an uppercase letter or a digit.
+      var cls = ($vizObject.attr('class') || '');
+      var g = cls.match(GUID);
+      if (g && g[0] !== extensionId) return g[0];
+      var tokens = (cls.match(/qv-object-([a-zA-Z0-9_-]+)/g) || [])
+        .map(function (t) { return t.replace('qv-object-', ''); })
+        .filter(function (t) { return t !== extensionId && /[A-Z0-9]/.test(t); });
+      return tokens[0] || null;
+    },
+
+    /**
+     * Collect every plausible Qlik object id near a clicked element, ordered by
+     * proximity (closest first) so the clicked object's own id precedes any
+     * sheet/app id. Handles both full GUIDs and short engine ids (e.g. "YMLQpv").
+     * @param {jQuery} $target - the actual clicked element
+     * @param {jQuery} $vizObject - the closest .qv-object container
+     * @returns {string[]} ordered, de-duplicated candidate ids
+     */
+    collectCandidateIds: function ($target, $vizObject) {
+      var GUID = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+      var ID_LIKE = /^[A-Za-z0-9_-]{3,}$/;
+      var out = [];
+      function add(v) {
+        if (v && v !== extensionId && out.indexOf(v) === -1) out.push(v);
+      }
+
+      // Walk from the click up; named id attributes first, then any GUID-valued
+      // attribute. Proximity ordering keeps the object's own id ahead of the
+      // sheet/app id that may sit on a higher ancestor.
+      var el = $target[0];
+      var depth = 0;
+      while (el && el !== document.body && depth < 20) {
+        if (el.getAttribute) {
+          var named = [el.getAttribute('tid'), el.getAttribute('data-qid'), el.getAttribute('data-object-id')];
+          for (var n = 0; n < named.length; n++) {
+            if (named[n] && ID_LIKE.test(named[n])) add(named[n]);
+          }
+        }
         if (el.attributes) {
           for (var i = 0; i < el.attributes.length; i++) {
             var m = (el.attributes[i].value || '').match(GUID);
-            if (m && m[0] !== extensionId) return m[0];
+            if (m) add(m[0]);
           }
         }
         el = el.parentElement;
+        depth++;
       }
 
-      // 2. Fall back to a GUID inside the .qv-object class list.
+      // Class on .qv-object: a GUID, then qv-object-<token> ids. Chart TYPE tokens
+      // (barchart/linechart/boxplot/combochart…) are all-lowercase and skipped;
+      // engine ids contain an uppercase letter or a digit.
       var cls = ($vizObject.attr('class') || '');
-      var clsMatch = cls.match(GUID);
-      if (clsMatch && clsMatch[0] !== extensionId) return clsMatch[0];
-
-      // 3. Last resort: legacy qv-object-<token> behaviour for charts whose id is
-      //    a short non-GUID token. Skip known type words.
-      var tokens = (cls.match(/qv-object-([a-zA-Z0-9_-]+)/g) || [])
+      var g = cls.match(GUID);
+      if (g) add(g[0]);
+      (cls.match(/qv-object-([a-zA-Z0-9_-]+)/g) || [])
         .map(function (t) { return t.replace('qv-object-', ''); })
-        .filter(function (t) { return t !== 'distributionplot' && /[A-Z0-9]/.test(t); });
-      return tokens[0] || null;
+        .filter(function (t) { return /[A-Z0-9]/.test(t); })
+        .forEach(add);
+
+      return out;
+    },
+
+    /**
+     * True when chart data looks usable (real chart), so a wrong candidate id
+     * resolving to a sheet / non-chart object is skipped during try-each.
+     * @param {object} d - chart data from getObjectData
+     * @returns {boolean}
+     */
+    isUsableChartData: function (d) {
+      if (!d || d.error) return false;
+      if ((d.dimensions && d.dimensions.length) || (d.measures && d.measures.length)) return true;
+      if (d.data && d.data.length) {
+        // reject the getObjectFallback "Unable to retrieve…" sentinel
+        if (d.data.length === 1 && typeof d.data[0] === 'string' && /unable to retrieve/i.test(d.data[0])) {
+          return false;
+        }
+        return true;
+      }
+      return false;
+    },
+
+    /**
+     * Try each candidate id in order; resolve with the first that yields usable
+     * chart data. Lets the engine validate which id is the real clicked object.
+     * @param {string[]} ids - ordered candidate ids
+     * @returns {Promise<{id:string, data:object}>}
+     */
+    getObjectDataFromCandidates: function (ids) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        var idx = 0;
+        var lastErr = null;
+        function tryNext() {
+          if (idx >= ids.length) {
+            reject(lastErr || new Error('No candidate id resolved to a chart'));
+            return;
+          }
+          var id = ids[idx++];
+          self.getObjectData(id).then(function (data) {
+            if (self.isUsableChartData(data)) {
+              resolve({ id: id, data: data });
+            } else {
+              tryNext();
+            }
+          }).catch(function (err) {
+            lastErr = err;
+            tryNext();
+          });
+        }
+        tryNext();
+      });
     },
 
     /**
