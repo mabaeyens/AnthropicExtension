@@ -455,28 +455,42 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     getCurrentSelections: function () {
       console.log("[DEBUG] Getting current selections");
 
-      return new Promise(function (resolve, reject) {
-        // Make sure we have a current app
-        if (!currentApp) {
-          currentApp = qlik.currApp();
-        }
+      if (!currentApp) {
+        currentApp = qlik.currApp();
+      }
 
-        // Get the list of current selections
-        currentApp.getList("CurrentSelections", function (reply) {
-          if (reply && reply.qSelectionObject && reply.qSelectionObject.qSelections) {
-            const selections = reply.qSelectionObject.qSelections.map(selection => ({
-              field: selection.qField,
-              values: selection.qSelected,
-              count: selection.qSelectedCount
-            }));
+      // Use a ONE-SHOT enigma session object instead of app.getList(): getList
+      // creates a persistent, subscribed engine object that is never released, so
+      // calling it on every chart selection leaked engine session objects. We
+      // create, read once, and destroy.
+      var doc = currentApp.model && currentApp.model.enigmaModel;
+      if (!doc || !doc.createSessionObject) {
+        return Promise.resolve([]);
+      }
 
-            console.log("[DEBUG] Current selections:", selections.length);
-            resolve(selections);
-          } else {
-            console.log("[DEBUG] No current selections");
-            resolve([]);
-          }
+      var objId = null;
+      return doc.createSessionObject({
+        qInfo: { qType: 'anthropic-cursel' },
+        qSelectionObjectDef: {}
+      }).then(function (obj) {
+        objId = obj.id;
+        return obj.getLayout();
+      }).then(function (layout) {
+        var sels = (layout.qSelectionObject && layout.qSelectionObject.qSelections) || [];
+        var selections = sels.map(function (s) {
+          return { field: s.qField, values: s.qSelected, count: s.qSelectedCount };
         });
+        if (objId && doc.destroySessionObject) {
+          doc.destroySessionObject(objId).catch(function () {});
+        }
+        console.log("[DEBUG] Current selections:", selections.length);
+        return selections;
+      }).catch(function (err) {
+        console.warn("[DEBUG] Could not read current selections:", err);
+        if (objId && doc.destroySessionObject) {
+          doc.destroySessionObject(objId).catch(function () {});
+        }
+        return [];
       });
     },
     
@@ -1123,66 +1137,69 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
 
           console.log("[DEBUG] Table dimensions:", qWidth, "x", qHeight);
 
-          // Calculate how many pages we need
-          // Maximum 10,000 cells per request
-          const MAX_CELLS_PER_PAGE = 10000;
-          const pageHeight = Math.floor(MAX_CELLS_PER_PAGE / qWidth);
-          const numPages = Math.ceil(qHeight / pageHeight);
-
-          console.log("[DEBUG] Will fetch", numPages, "pages with height", pageHeight);
-
-          // Prepare requests for all pages
-          const pagePromises = [];
-
-          for (let i = 0; i < numPages; i++) {
-            const pageTop = i * pageHeight;
-            const pageSize = Math.min(pageHeight, qHeight - pageTop);
-
-            // Request this page
-            const pagePromise = model.getHyperCubeData('/qHyperCubeDef', [{
-              qTop: pageTop,
-              qLeft: 0,
-              qWidth: qWidth,
-              qHeight: pageSize
-            }]);
-
-            pagePromises.push(pagePromise);
+          if (!qWidth || qWidth < 1) {
+            delete chartData.needsDataFetch;
+            delete chartData.hypercubeSize;
+            resolve(chartData);
+            return;
           }
 
-          // Execute all page requests
-          Promise.all(pagePromises).then(function (dataPages) {
-            console.log("[DEBUG] Received", dataPages.length, "data pages");
+          // HARD CAP: never fetch more than MAX_FETCH_CELLS cells. A wide/tall table
+          // would otherwise spawn thousands of concurrent requests and freeze the tab.
+          // Beyond the cap we truncate and flag it so the UI can warn the user.
+          const MAX_CELLS_PER_PAGE = 10000;
+          const maxCells = (config.DATA && config.DATA.MAX_FETCH_CELLS) || 50000;
+          const concurrency = (config.DATA && config.DATA.FETCH_PAGE_CONCURRENCY) || 4;
+          const maxRows = Math.max(1, Math.min(qHeight, Math.floor(maxCells / qWidth)));
+          if (maxRows < qHeight) {
+            chartData.dataTruncated = { fetched: maxRows, total: qHeight };
+            console.warn("[DEBUG] Table truncated to", maxRows, "of", qHeight, "rows");
+          }
 
-            // Process all the pages
-            dataPages.forEach(function (page) {
-              if (page && page[0] && page[0].qMatrix) {
-                page[0].qMatrix.forEach(row => {
-                  const dataRow = row.map(cell => ({
-                    value: cell.qText,
-                    numValue: cell.qNum,
-                    state: cell.qState
-                  }));
-                  chartData.data.push(dataRow);
-                });
-              }
+          const pageHeight = Math.max(1, Math.floor(MAX_CELLS_PER_PAGE / qWidth));
+          const numPages = Math.ceil(maxRows / pageHeight);
+          console.log("[DEBUG] Will fetch", numPages, "pages (height", pageHeight + ") up to", maxRows, "rows");
+
+          // Build page descriptors (bounded by maxRows).
+          const pages = [];
+          for (let i = 0; i < numPages; i++) {
+            const pageTop = i * pageHeight;
+            pages.push({ qTop: pageTop, qLeft: 0, qWidth: qWidth, qHeight: Math.min(pageHeight, maxRows - pageTop) });
+          }
+
+          // Dispatch pages in bounded batches (not all at once) to avoid saturating
+          // the engine even within the cap.
+          function runBatch(start) {
+            const batch = pages.slice(start, start + concurrency);
+            if (batch.length === 0) {
+              delete chartData.needsDataFetch;
+              delete chartData.hypercubeSize;
+              console.log("[DEBUG] Processed", chartData.data.length, "rows of data");
+              resolve(chartData);
+              return;
+            }
+            Promise.all(batch.map(function (p) {
+              return model.getHyperCubeData('/qHyperCubeDef', [p]);
+            })).then(function (dataPages) {
+              dataPages.forEach(function (page) {
+                if (page && page[0] && page[0].qMatrix) {
+                  page[0].qMatrix.forEach(function (row) {
+                    chartData.data.push(row.map(function (cell) {
+                      return { value: cell.qText, numValue: cell.qNum, state: cell.qState };
+                    }));
+                  });
+                }
+              });
+              runBatch(start + concurrency);
+            }).catch(function (error) {
+              console.error("[DEBUG] Error fetching table data pages:", error);
+              // Return whatever we already collected.
+              delete chartData.needsDataFetch;
+              delete chartData.hypercubeSize;
+              resolve(chartData);
             });
-
-            console.log("[DEBUG] Processed", chartData.data.length, "rows of data");
-
-            // Remove the fetch flag
-            delete chartData.needsDataFetch;
-            delete chartData.hypercubeSize;
-
-            // Return the complete data
-            resolve(chartData);
-          }).catch(function (error) {
-            console.error("[DEBUG] Error fetching table data pages:", error);
-
-            // Even if we have an error, return what we have
-            delete chartData.needsDataFetch;
-            delete chartData.hypercubeSize;
-            resolve(chartData);
-          });
+          }
+          runBatch(0);
         }).catch(function (error) {
           console.error("[DEBUG] Error getting object for data fetch:", error);
           reject(error);

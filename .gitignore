@@ -21,5 +21,6 @@ npm-debug.log*
 AnthropicExtension-v*.zip
 _staging/
 
-# Claude local machine settings (skills under .claude/skills are kept)
-.claude/settings.local.json
+# Claude Code local files (kept locally, not shipped in the repo)
+.claude/
+CLAUDE.md

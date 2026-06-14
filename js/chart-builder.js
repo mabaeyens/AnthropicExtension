@@ -20,6 +20,15 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
   // Counter for unique preview container ids (Date.now/Math.random avoided).
   var previewSeq = 0;
 
+  // Registry of open preview viz handles so they can be closed (engine session
+  // objects) when the conversation is cleared — otherwise emptying the DOM would
+  // leak them.
+  var openPreviews = [];
+  function forgetPreview(viz) {
+    var i = openPreviews.indexOf(viz);
+    if (i !== -1) openPreviews.splice(i, 1);
+  }
+
   function escapeHtml(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -32,6 +41,14 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     SUGGESTED_TYPES: SUGGESTED_TYPES,
     EXCLUDED_TYPES: EXCLUDED_TYPES,
     _escape: escapeHtml,
+
+    /** Close every open preview viz (releases engine session objects). */
+    closeAllPreviews: function () {
+      openPreviews.forEach(function (viz) {
+        try { viz.close(); } catch (e) { /* ignore */ }
+      });
+      openPreviews = [];
+    },
 
     /**
      * Instruction appended to a "suggest a chart" request. Steers the model to
@@ -161,8 +178,10 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
         app.visualization.create(spec.type, columns, { title: spec.title })
           .then(function (viz) {
             viz.show(divId);
+            openPreviews.push(viz);
             $remove.on('click', function () {
               try { viz.close(); } catch (e) { /* ignore */ }
+              forgetPreview(viz);
               $card.remove();
             });
             resolve(viz);

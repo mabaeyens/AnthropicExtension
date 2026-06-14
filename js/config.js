@@ -17,7 +17,7 @@ define([], function() {
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
     VERSION: '0.3.0',
-    BUILD: 17,
+    BUILD: 18,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -43,6 +43,14 @@ define([], function() {
     // Data Collection Settings
     DATA: {
       MAX_ROWS: 1000,
+      // Hard ceiling on cells fetched from a single object's hypercube. Prevents
+      // a wide/tall table from spawning thousands of concurrent engine requests
+      // (which would freeze the tab). Data beyond this is truncated with a notice.
+      MAX_FETCH_CELLS: 50000,
+      // Above this cell count the user is told the table was truncated.
+      LARGE_TABLE_CELLS: 25000,
+      // Max concurrent getHyperCubeData page requests.
+      FETCH_PAGE_CONCURRENCY: 4,
       DEFAULT_OPTIMIZATION: {
         maxRows: 1000,
         includeNumericValues: true,
@@ -52,6 +60,13 @@ define([], function() {
       }
     },
     
+    // Conversation memory
+    CHAT: {
+      // Max number of prior messages (user+assistant) sent as history per request.
+      // Bounds heap growth and per-request token cost over a long session.
+      HISTORY_MAX: 12
+    },
+
     // Feature flags
     FEATURES: {
       EXTRACT_CITY_VALUES: false,  // Disable city-value extraction (not working with maps)

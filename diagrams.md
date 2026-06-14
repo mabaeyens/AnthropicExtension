@@ -84,7 +84,7 @@ sequenceDiagram
   Note over User,QS: Select a chart
   User->>UI: Click "Add Chart", then click a chart
   UI->>DC: getObjectData(objectId)
-  DC->>QS: get layout; page the FULL hypercube (all rows)
+  DC->>QS: get layout, then page the full hypercube (all rows)
   QS-->>DC: dimensions, measures, all rows
   DC-->>UI: chartData (complete result set)
 
@@ -96,7 +96,7 @@ sequenceDiagram
   QS-->>DC: real tables, fields, master items (with expressions)
   DC-->>UI: appContext
 
-  UI->>UI: if payload > ~65 KB, confirm() with the user
+  UI->>UI: if payload over ~65 KB, confirm() with the user
   UI->>API: sendToAnthropic({ userPrompt, chartData, context, systemPrompt, history })
   API->>SEC: getAPIKey()
   SEC-->>API: decrypted key
@@ -113,7 +113,7 @@ sequenceDiagram
   ANT-->>API: completion (content[0].text)
 
   API-->>UI: response + token metrics
-  UI->>UI: render Markdown (formatting.js + marked.js); append to thread
+  UI->>UI: render Markdown (formatting.js + marked.js), append to thread
   UI-->>User: Rendered analysis (with Copy button)
 ```
 

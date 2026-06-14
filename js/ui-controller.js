@@ -43,6 +43,17 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         'data (selections) to reduce it.\n\nSend it anyway?');
     }
 
+    // Bound the conversation history sent per request: keep only the last
+    // HISTORY_MAX messages so heap and per-request tokens don't grow without
+    // bound over a long session. Preserve user-first alternation for the API.
+    function boundedHistory() {
+      var max = (config.CHAT && config.CHAT.HISTORY_MAX) || 12;
+      if (conversation.length <= max) return conversation.slice();
+      var trimmed = conversation.slice(conversation.length - max);
+      if (trimmed.length && trimmed[0].role !== 'user') trimmed = trimmed.slice(1);
+      return trimmed;
+    }
+
     // Clipboard fallback for non-secure contexts where navigator.clipboard is
     // unavailable. Copies via a hidden textarea + execCommand.
     function fallbackCopy(text) {
@@ -241,6 +252,22 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         var $header = $panel.find('.anthropic-panel-header');
         var dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
 
+        // Document move/up handlers are attached only WHILE dragging and removed
+        // on mouseup, so they aren't live (firing on every mouse move) for the
+        // whole session.
+        function onMove(e) {
+          if (!dragging) return;
+          var maxLeft = Math.max(0, window.innerWidth  - $panel.outerWidth());
+          var maxTop  = Math.max(0, window.innerHeight - $panel.outerHeight());
+          var left = Math.min(Math.max(0, startLeft + (e.clientX - startX)), maxLeft);
+          var top  = Math.min(Math.max(0, startTop  + (e.clientY - startY)), maxTop);
+          $panel.css({ left: left + 'px', top: top + 'px' });
+        }
+        function onUp() {
+          dragging = false;
+          $(document).off('mousemove.anthropicDrag mouseup.anthropicDrag');
+        }
+
         $header.on('mousedown', function(e) {
           if ($(e.target).closest('#anthropic-panel-close').length) return; // don't hijack close
           var rect = $panel[0].getBoundingClientRect();
@@ -249,19 +276,10 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           dragging = true;
           $panel.css({ position: 'fixed', left: startLeft + 'px', top: startTop + 'px',
                        right: 'auto', bottom: 'auto', margin: 0 });
+          $(document).on('mousemove.anthropicDrag', onMove)
+                     .on('mouseup.anthropicDrag', onUp);
           e.preventDefault();
         });
-
-        $(document).on('mousemove.anthropicDrag', function(e) {
-          if (!dragging) return;
-          var maxLeft = Math.max(0, window.innerWidth  - $panel.outerWidth());
-          var maxTop  = Math.max(0, window.innerHeight - $panel.outerHeight());
-          var left = Math.min(Math.max(0, startLeft + (e.clientX - startX)), maxLeft);
-          var top  = Math.min(Math.max(0, startTop  + (e.clientY - startY)), maxTop);
-          $panel.css({ left: left + 'px', top: top + 'px' });
-        });
-
-        $(document).on('mouseup.anthropicDrag', function() { dragging = false; });
       },
 
       // Render the api-key status line. Key management lives entirely in the
@@ -372,7 +390,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             userPrompt:   userPrompt,
             chartData:    chartDataPayload,
             systemPrompt: systemPrompt,
-            history:      conversation.slice()
+            history:      boundedHistory()
           };
 
           // App context only on the first turn (subsequent turns inherit it via history)
@@ -432,7 +450,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             systemPrompt: 'You are a Qlik Sense visualization expert. When asked to ' +
               'suggest a chart, reply with ONLY the requested fenced qlik-chart JSON ' +
               'block — no prose, no explanation.',
-            history:      conversation.slice()
+            history:      boundedHistory()
           };
 
           var includeContext = $container.find('#include-context').is(':checked');
@@ -649,6 +667,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         contextSent = false;
         lastChartSignature = null;
         $currentTurn = null;
+        // Close any live preview vizzes before discarding their DOM so the engine
+        // session objects don't leak.
+        chartBuilder.closeAllPreviews();
         $container.find('#anthropic-conversation').empty();
       },
 
@@ -763,6 +784,17 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         dataCollector.stopSelectionTracking();
 
         renderChips();
+
+        // Warn early if the table was too large to fetch fully (the engine fetch
+        // is hard-capped to avoid freezing the tab).
+        if (objectData.dataTruncated) {
+          var t = objectData.dataTruncated;
+          var $statusTrunc = $container.find('#selection-status');
+          $statusTrunc.html('<span style="color:#f39c12;">⚠️ Large table — only the first ' +
+            t.fetched.toLocaleString() + ' of ' + t.total.toLocaleString() +
+            ' rows will be analyzed.</span>').show();
+        }
+
         console.log('[DEBUG] Chart added:', objectId, '— total:', selectedCharts.length);
       },
 
@@ -776,7 +808,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         var $thinking = this.appendThinkingMessage('Thinking…');
         this.processAnthropicRequest(
           appId,
-          { userPrompt: userPrompt, chartData: chartData, context: context, history: conversation.slice() },
+          { userPrompt: userPrompt, chartData: chartData, context: context, history: boundedHistory() },
           $thinking,
           null
         );
