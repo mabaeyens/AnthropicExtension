@@ -56,11 +56,23 @@ Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-pr
 - Anthropic API key (this is the **only** thing an end user configures)
 - For the optional proxy mode only: a Node.js proxy at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
 
+## Download
+
+**Latest release: [v0.3.1](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.1)** —
+download `AnthropicExtension-v0.3.1.zip` from the
+[releases page](https://github.com/mabaeyens/AnthropicExtension/releases). See
+[`CHANGELOG.md`](./CHANGELOG.md) for what changed.
+
 ## Installation
 
-1. Copy the repository folder into the Qlik Sense extensions directory:
-   - **Desktop**: `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\`
-   - **Enterprise**: QMC console → Extensions → Import
+You can either use the packaged release zip or copy the repository folder directly.
+
+1. Get the extension into the Qlik Sense extensions directory:
+   - **Enterprise (QSEoW)**: in the QMC → **Extensions → Import**, upload
+     `AnthropicExtension-v0.3.1.zip`.
+   - **Desktop**: unzip the release into
+     `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\` (or copy this repo
+     folder there).
 2. Reload Qlik Sense
 3. The extension will appear in the assets panel as **"Anthropic AI Assistant"**
 
