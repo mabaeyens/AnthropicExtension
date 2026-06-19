@@ -1,0 +1,6 @@
+# Treat generated documents as binary (no line-ending conversion)
+*.pdf  binary
+*.docx binary
+*.pptx binary
+*.png  binary
+*.zip  binary

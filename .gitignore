@@ -21,6 +21,10 @@ npm-debug.log*
 AnthropicExtension-v*.zip
 _staging/
 
+# Python (doc build scripts)
+__pycache__/
+*.pyc
+
 # Claude Code local files (kept locally, not shipped in the repo)
 .claude/
 CLAUDE.md
