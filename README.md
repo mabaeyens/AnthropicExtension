@@ -5,7 +5,7 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 
 > ## ⚠️ Demo only — no warranty, no liability
 >
-> This is an **experimental demonstration asset (v0.3.3)**, not a product. It is **not** hardened for
+> This is an **experimental demonstration asset (v0.3.4)**, not a product. It is **not** hardened for
 > production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
 > accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
 > customer, production, or other environment. **Use entirely at your own risk.**
@@ -20,6 +20,10 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > endpoint the proxy targets. The Anthropic API key is only **obfuscated** in `localStorage`, not
 > strongly encrypted. **Do not use this with sensitive, regulated, or personal data** unless that
 > data egress is explicitly permitted in your environment.
+>
+> **Exception — local model:** selecting the **Ministral 3 8B (local)** model (v0.3.4) runs inference
+> on your own machine via Ollama, so **no chart data leaves your environment**. See
+> [Local model](#local-model-ministral-3-8b-via-ollama).
 >
 > See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), and [`diagrams.md`](./diagrams.md).
 
@@ -53,13 +57,14 @@ Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-pr
 ## Requirements
 
 - Client-managed Qlik Sense on Windows — Desktop or Enterprise (QSEoW) ≥ 3.0 (not Qlik Cloud)
-- Anthropic API key (this is the **only** thing an end user configures)
+- Anthropic API key (the **only** thing an end user configures — **not** required for the local model)
 - For the optional proxy mode only: a Node.js proxy at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
+- For the local model only: a local [Ollama](https://ollama.com) server plus [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy) ≥ v1.1.0 (`/api/ollama` route) — see [Local model](#local-model-ministral-3-8b-via-ollama)
 
 ## Download
 
-**Latest release: [v0.3.3](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.3)** —
-download `AnthropicExtension-v0.3.3.zip` from the
+**Latest release: [v0.3.4](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.4)** —
+download `AnthropicExtension-v0.3.4.zip` from the
 [releases page](https://github.com/mabaeyens/AnthropicExtension/releases). See
 [`CHANGELOG.md`](./CHANGELOG.md) for what changed.
 
@@ -69,7 +74,7 @@ You can either use the packaged release zip or copy the repository folder direct
 
 1. Get the extension into the Qlik Sense extensions directory:
    - **Enterprise (QSEoW)**: in the QMC → **Extensions → Import**, upload
-     `AnthropicExtension-v0.3.3.zip`.
+     `AnthropicExtension-v0.3.4.zip`.
    - **Desktop**: unzip the release into
      `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\` (or copy this repo
      folder there).
@@ -87,9 +92,10 @@ End users only enter an **API key**. The following are exposed in the extension'
 
 | Property | Default | Description |
 |---|---|---|
-| API Key | — | Your Anthropic API key (stored encrypted in `localStorage`, shared across apps) |
-| Model | `claude-haiku-4-5` | Claude model: Haiku 4.5, Sonnet 4.6, or Opus 4.8 |
-| Proxy URL | _(blank)_ | Leave blank to call the API directly; set it to route through a local proxy |
+| API Key | — | Your Anthropic API key (stored encrypted in `localStorage`, shared across apps). Not required for the local model |
+| Model | `claude-haiku-4-5` | Claude (Haiku 4.5, Sonnet 4.6, Opus 4.8) **or** Ministral 3 8B (local, via Ollama) |
+| Proxy URL | _(blank)_ | Leave blank to call the API directly; set it to route Claude requests through a local proxy |
+| Local model URL | _(blank)_ | Ollama endpoint (via the HTTPS proxy) used when Model is Ministral — see [Local model](#local-model-ministral-3-8b-via-ollama) |
 
 Advanced defaults can still be tuned in `js/config.js`:
 
@@ -97,8 +103,10 @@ Advanced defaults can still be tuned in `js/config.js`:
 |---|---|---|
 | `API.URL` | `https://api.anthropic.com/v1/messages` | Direct Anthropic endpoint (used when no Proxy URL is set) |
 | `API.VERSION` | `2023-06-01` | `anthropic-version` header for direct calls |
-| `API.MODEL` | `claude-haiku-4-5` | Default Claude model |
+| `API.MODEL` | `claude-haiku-4-5` | Default model (Claude id, or `ministral-local` for the local backend) |
 | `API.MAX_TOKENS` | `4000` | Maximum tokens in the response |
+| `API.LOCAL.URL` | `https://localhost:3000/api/ollama` | Local model endpoint (Ollama via the HTTPS proxy) |
+| `API.LOCAL.MODEL_TAG` | `ministral-3-demo` | Ollama model name sent for the local backend |
 | `DATA.MAX_ROWS` | `1000` | Maximum rows sent to the LLM |
 | `DEBUG_MODE` | `false` | Enable/disable console logs |
 
@@ -115,6 +123,45 @@ that:
 - Listens at your Proxy URL (e.g. `https://localhost:3000/api/anthropic`)
 - Accepts POST requests with the `x-api-key` header (Anthropic key)
 - Forwards them to `https://api.anthropic.com/v1/messages`
+
+## Local model (Ministral 3 8B via Ollama)
+
+As of **v0.3.4** the assistant can run against a **local model** instead of Claude — useful for
+offline demos or when chart data must **not leave the machine**. Select **"Ministral 3 8B (local, via
+Ollama)"** in the **Model** dropdown; **no API key is required** for this path.
+
+Because a QSEoW dashboard is served over **HTTPS**, the browser cannot call a plain-HTTP local Ollama
+server directly (mixed-content blocking). Requests therefore go through the **cm-llm-proxy**
+`/api/ollama` route over HTTPS, which forwards to Ollama on the same machine:
+
+```
+Qlik (HTTPS) → https://localhost:3000/api/ollama  (cm-llm-proxy) → http://localhost:11434 (Ollama)
+```
+
+**Setup (on the machine running Ollama):**
+
+1. Install [Ollama](https://ollama.com), pull the model, then bake an 8k context window — this keeps
+   responses fast on a small GPU:
+   ```bash
+   ollama pull ministral-3:8b
+   printf 'FROM ministral-3:8b\nPARAMETER num_ctx 8192\n' > Modelfile
+   ollama create ministral-3-demo -f Modelfile
+   ```
+   (Plain `ministral-3:8b` also works, at Ollama's default context length.)
+2. Run **[cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)** ≥ v1.1.0 (it exposes the
+   `/api/ollama` route). Set `OLLAMA_URL` in its `.env` if Ollama isn't at the default
+   `http://localhost:11434`.
+3. In the extension properties, set **Model** = *Ministral 3 8B (local, via Ollama)* and
+   **Local model URL** = `https://localhost:3000/api/ollama`.
+
+**Notes**
+
+- The model tag, endpoint, timeout, and context window default in `js/config.js` under `API.LOCAL`
+  (`MODEL_TAG` = `ministral-3-demo`, `URL`, `TIMEOUT` = 5 min) and
+  `API.CONTEXT_WINDOWS['ministral-local']` = `8192` (keep this ≤ the model's baked `num_ctx`).
+- Local inference is **slower** than the hosted API — expect roughly **6–7 tok/s** for the 8.9B Q4
+  model on a 4 GB laptop GPU, hence the 5-minute request timeout.
+- Ministral 3 (Ollama library) is licensed **Apache 2.0**. This path is demo-grade.
 
 ## Usage
 
@@ -142,6 +189,8 @@ The request path (User → Qlik Sense → **external LLM** → back) is:
    - **Direct (default):** `POST https://api.anthropic.com/v1/messages` with `x-api-key`,
      `anthropic-version`, and `anthropic-dangerous-direct-browser-access: true`.
    - **Proxy (optional):** `POST <Proxy URL>` with `x-api-key`; the proxy forwards to the LLM.
+   - **Local model:** `POST <Local model URL>` in **OpenAI chat-completions** format (no key); the
+     proxy's `/api/ollama` route forwards to a local Ollama server. Data stays on the machine.
 5. **Render** — Claude's reply is rendered as Markdown (`formatting.js` + bundled `marked.js`) into the
    chat thread; each answer has a **Copy** button.
 6. **Create a chart (optional, write-back)** — "Suggest a chart" asks the model for a chart spec;
@@ -189,6 +238,7 @@ AnthropicExtension/
 - [x] Data extraction from native charts (bar, line, combo, box, etc.); engine-validated id resolution
 - [x] **Full hypercube** retrieval for large tables (with a ~65 KB pre-send warning)
 - [x] Analysis with Claude (direct browser call by default; optional proxy)
+- [x] **Local model** backend (Ministral 3 8B via Ollama) — no API key, data stays on-machine
 - [x] **Conversation thread** with memory, Markdown rendering, and per-response copy
 - [x] **Real data-model context** (tables, fields, master dimensions/measures) sent on first use
 - [x] **Suggest a chart** (live preview) and **add to sheet** (Edit mode; new-sheet fallback)
