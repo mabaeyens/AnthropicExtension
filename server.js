@@ -75,9 +75,43 @@ app.post('/api/anthropic', async (req, res) => {
   }
 });
 
+// Local model (Ollama) proxy endpoint.
+// Forwards an OpenAI-compatible chat-completions body to a local Ollama server.
+// This lets the HTTPS Qlik page reach a plain-HTTP local model (mixed content would
+// otherwise block a direct browser call). No API key is required for local inference.
+app.post('/api/ollama', async (req, res) => {
+  console.log('Received local-model (Ollama) request');
+
+  try {
+    const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434/v1/chat/completions';
+
+    const response = await axios({
+      method: 'post',
+      url: ollamaUrl,
+      headers: { 'Content-Type': 'application/json' },
+      data: req.body,
+      timeout: 300000 // 5 min — local inference is far slower than the hosted API
+    });
+
+    console.log('Received response from Ollama');
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error proxying request to Ollama:', error.message);
+
+    const status = error.response?.status || 500;
+    const errorData = error.response?.data || { error: error.message };
+
+    res.status(status).json({
+      error: error.message,
+      details: errorData
+    });
+  }
+});
+
 // Start the server
 https.createServer(options, app).listen(3000, () => {
   console.log(`Anthropic proxy server running at httpS://localhost:${port}`);
   console.log(`Health check: httpS://localhost:${port}/health`);
-  console.log(`Proxy endpoint: httpS://localhost:${port}/api/anthropic`);
+  console.log(`Anthropic endpoint: httpS://localhost:${port}/api/anthropic`);
+  console.log(`Local model endpoint: httpS://localhost:${port}/api/ollama`);
 });

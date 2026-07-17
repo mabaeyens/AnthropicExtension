@@ -1,6 +1,6 @@
 # cm-llm-proxy
 
-Local HTTPS proxy that forwards requests from the Qlik Sense [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) to the Anthropic API.
+Local HTTPS proxy that forwards requests from the Qlik Sense [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) to the Anthropic API **or to a local Ollama model**.
 
 ## Why is this needed?
 
@@ -8,7 +8,11 @@ Qlik Sense Server enforces CORS restrictions and does not allow direct calls to 
 
 ```
 Qlik Sense (browser) → https://localhost:3000/api/anthropic → api.anthropic.com
+Qlik Sense (browser) → https://localhost:3000/api/ollama    → http://localhost:11434 (Ollama)
 ```
+
+The `/api/ollama` route additionally bypasses **mixed-content** blocking: an HTTPS Qlik page cannot
+call a plain-HTTP local Ollama server directly, so it goes through this HTTPS proxy instead.
 
 ## Requirements
 
@@ -34,6 +38,7 @@ All settings are configured via `.env` (copied from `.env.example`):
 |---|---|---|
 | `QLIK_ORIGIN` | Qlik Sense server URL allowed by CORS | `https://your-qlik-server` |
 | `PORT` | Proxy server port | `3000` |
+| `OLLAMA_URL` | Local Ollama OpenAI-compatible endpoint (for `/api/ollama`) | `http://localhost:11434/v1/chat/completions` |
 
 ## Certificates
 
@@ -57,8 +62,12 @@ The server starts at `https://localhost:3000`. Available endpoints:
 
 - `GET  /health` — Check that the proxy is running
 - `POST /api/anthropic` — Forwards the request to `api.anthropic.com/v1/messages`
+- `POST /api/ollama` — Forwards an OpenAI-compatible chat body to the local Ollama server (`OLLAMA_URL`)
 
 The Anthropic API key is passed per request via the `x-api-key` header (managed by the Qlik extension).
+The `/api/ollama` route needs **no** API key; it requires a running local [Ollama](https://ollama.com)
+server (e.g. `ollama pull ministral-3:8b`). Local inference is slower than the hosted API, so this
+route uses a 5-minute timeout.
 
 ## Related repositories
 
