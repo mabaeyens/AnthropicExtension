@@ -16,8 +16,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.3.3',
-    BUILD: 24,
+    VERSION: '0.3.4',
+    BUILD: 25,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -33,8 +33,26 @@ define([], function() {
       VERSION: '2023-06-01',
       // Default model. Overridden per-instance from the extension's "Model" property.
       MODEL: 'claude-haiku-4-5',
-      // Models offered in the properties-panel dropdown.
-      MODELS: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+      // Models offered in the properties-panel dropdown. 'ministral-local' is a
+      // synthetic id selecting the local (Ollama) backend rather than an Anthropic model.
+      MODELS: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8', 'ministral-local'],
+      // Local-model backend (Ollama via the HTTPS proxy). Used when MODEL === 'ministral-local'.
+      // Requests are sent in OpenAI chat-completions format; no API key is required.
+      LOCAL: {
+        // Proxy route that forwards to the local Ollama server. Overridden per-instance
+        // from the extension's "Local model URL" property. On QSEoW (HTTPS) this must be an
+        // HTTPS endpoint — the browser cannot call http://localhost:11434 directly.
+        URL: 'https://localhost:3000/api/ollama',
+        // Ollama model name sent in the payload's `model` field. This is a derived model
+        // with num_ctx baked to 8192 (see CHANGELOG for the one-line Modelfile). 8k keeps
+        // the 4 GB-GPU demo responsive (~6-7 tok/s) while fitting trimmed chart payloads.
+        // Plain 'ministral-3:8b' also works but runs at Ollama's default context length.
+        MODEL_TAG: 'ministral-3-demo',
+        LABEL: 'Ministral 3 8B (local)',
+        // Client-side request timeout for local calls (ms). Much larger than the hosted
+        // API's TIMEOUT: cold model load (~20s) plus generation at a few tok/s can run long.
+        TIMEOUT: 300000
+      },
       MAX_TOKENS: 4000,
       SYSTEM_PROMPT: 'You are a business analyst and expert Qlik Sense user. Be concise. Always aggregate the data and show absolute values and percentages. Focus on insights that would help business decision making. Present your analysis in a structured format with bullet points for key findings.',
       TIMEOUT: 60000,
@@ -44,7 +62,10 @@ define([], function() {
       CONTEXT_WINDOWS: {
         'claude-haiku-4-5': 200000,
         'claude-sonnet-4-6': 200000,
-        'claude-opus-4-8': 200000
+        'claude-opus-4-8': 200000,
+        // Local Ministral 3 8B — must match (or be ≤) the Ollama model's baked num_ctx so the
+        // extension trims payloads before Ollama would silently truncate. Demo model = 8192.
+        'ministral-local': 8192
       }
     },
     

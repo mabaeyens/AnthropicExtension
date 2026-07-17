@@ -3,7 +3,19 @@ define(['jquery', './security', './config', './data-format'], function($, securi
 
   return {
     /**
+     * True when the selected model is the local (Ollama) backend rather than an
+     * Anthropic model. In that case requests use OpenAI chat-completions format,
+     * are routed to config.API.LOCAL.URL, and need no API key.
+     * @returns {boolean}
+     */
+    isLocalModel: function() {
+      return config.API.MODEL === 'ministral-local';
+    },
+
+    /**
      * Resolve the request URL and headers based on config.
+     * - Local model: route to config.API.LOCAL.URL (HTTPS proxy → Ollama). No key,
+     *   no anthropic headers — just JSON.
      * - When config.API.PROXY_URL is set, route through the local proxy (the proxy
      *   adds the anthropic-version header itself).
      * - Otherwise call api.anthropic.com directly from the browser, which requires
@@ -12,6 +24,12 @@ define(['jquery', './security', './config', './data-format'], function($, securi
      * @returns {{url: string, headers: object}}
      */
     buildTransport: function(apiKey) {
+      if (this.isLocalModel()) {
+        return {
+          url: config.API.LOCAL.URL,
+          headers: { 'Content-Type': 'application/json' }
+        };
+      }
       const proxyUrl = config.API.PROXY_URL;
       if (proxyUrl) {
         return {
@@ -44,35 +62,48 @@ define(['jquery', './security', './config', './data-format'], function($, securi
       console.log("[DEBUG] Anthropic API called with appId:", appId);
     
       try {
-        // Get the API key (shared across all apps)
+        const local = this.isLocalModel();
+
+        // Get the API key (shared across all apps). The local (Ollama) backend needs none.
         const apiKey = security.getAPIKey();
 
-        if (!apiKey) {
+        if (!local && !apiKey) {
           console.error("[DEBUG] API KEY ERROR: No API key found");
           errorCallback('API key not found. Please enter your Anthropic API key in the settings.');
           return;
         }
-    
-        // Prepare the request payload
+
+        // Build this turn's user-message text (chart data + context + question).
+        // buildMessageContent reads only `data`; pass an empty object as the legacy payload arg.
         console.log("[DEBUG] Preparing payload");
-        const payload = {
-          model: config.API.MODEL,
-          max_tokens: config.API.MAX_TOKENS,
-          messages: [],
-          system: data.systemPrompt || config.API.SYSTEM_PROMPT
-        };
+        const systemPrompt = data.systemPrompt || config.API.SYSTEM_PROMPT;
+        const messageMetrics = this.buildMessageContent({}, data);
+        console.log("[DEBUG] Using system prompt:", systemPrompt.substring(0, 50) + "...");
 
-        // Log which system prompt is being used
-        console.log("[DEBUG] Using system prompt:", payload.system.substring(0, 50) + "...");
+        // Prior conversation turns keep context across questions. History entries are
+        // { role, content } string pairs — valid for both Anthropic and OpenAI formats.
+        const priorTurns = data.history || [];
+        const thisTurn = { role: "user", content: messageMetrics.builtText };
 
-        // Build this turn's user-message text (chart data + context + question)
-        const messageMetrics = this.buildMessageContent(payload, data);
-
-        // Prepend any prior conversation turns so the model keeps context across
-        // questions, then append this turn's user message.
-        payload.messages = (data.history || []).concat([
-          { role: "user", content: messageMetrics.builtText }
-        ]);
+        let payload;
+        if (local) {
+          // OpenAI chat-completions shape (Ollama /v1/chat/completions): system is the
+          // first message, not a top-level field.
+          payload = {
+            model: config.API.LOCAL.MODEL_TAG,
+            max_tokens: config.API.MAX_TOKENS,
+            stream: false,
+            messages: [{ role: "system", content: systemPrompt }].concat(priorTurns).concat([thisTurn])
+          };
+        } else {
+          // Anthropic Messages shape: system is a top-level field.
+          payload = {
+            model: config.API.MODEL,
+            max_tokens: config.API.MAX_TOKENS,
+            system: systemPrompt,
+            messages: priorTurns.concat([thisTurn])
+          };
+        }
     
         // Check payload size
         const payloadString = JSON.stringify(payload);
@@ -94,7 +125,9 @@ define(['jquery', './security', './config', './data-format'], function($, securi
           type: 'POST',
           headers: transport.headers,
           data: payloadString,
-          timeout: config.API.TIMEOUT,
+          // Local inference is far slower than the hosted API (model load + low tok/s on
+          // a small GPU), so give the local backend a much longer client-side timeout.
+          timeout: local ? config.API.LOCAL.TIMEOUT : config.API.TIMEOUT,
           success: function(response) {
             console.log("[DEBUG] SUCCESS: Received response from proxy");
             // Pass both response and metrics to callback
@@ -477,11 +510,21 @@ define(['jquery', './security', './config', './data-format'], function($, securi
      * @param {function} errorCallback - Callback for error handling
      */
     testConnection: function(appId, successCallback, errorCallback) {
+      const local = this.isLocalModel();
       const testData = {
-        userPrompt: "Hello Claude, this is a test call from the Qlik Sense extension."
+        userPrompt: "Hello, this is a test call from the Qlik Sense extension."
       };
-      
-      const testPayload = {
+
+      // OpenAI shape for the local backend (system as first message); Anthropic shape otherwise.
+      const testPayload = local ? {
+        model: config.API.LOCAL.MODEL_TAG,
+        max_tokens: 100,
+        stream: false,
+        messages: [
+          { role: "system", content: config.API.SYSTEM_PROMPT },
+          { role: "user", content: testData.userPrompt }
+        ]
+      } : {
         model: config.API.MODEL,
         max_tokens: 100, // Small response for test
         messages: [{
@@ -490,12 +533,12 @@ define(['jquery', './security', './config', './data-format'], function($, securi
         }],
         system: config.API.SYSTEM_PROMPT
       };
-      
+
       try {
-        // Get API key (shared across all apps)
+        // Get API key (shared across all apps). The local (Ollama) backend needs none.
         const apiKey = security.getAPIKey();
 
-        if (!apiKey) {
+        if (!local && !apiKey) {
           errorCallback('API key not found. Please enter your Anthropic API key in the settings.');
           return;
         }
@@ -533,11 +576,16 @@ define(['jquery', './security', './config', './data-format'], function($, securi
      * @returns {string} The formatted response text or an error message
      */
     formatResponse: function(response) {
+      // Local (Ollama, OpenAI-compatible) shape: choices[0].message.content
+      if (response && response.choices && response.choices.length > 0 &&
+          response.choices[0].message) {
+        return response.choices[0].message.content;
+      }
+      // Anthropic Messages shape: content[0].text
       if (response && response.content && response.content.length > 0) {
         return response.content[0].text;
-      } else {
-        return "Received invalid response structure from Anthropic.";
       }
+      return "Received invalid response structure from the model.";
     }
   };
 });

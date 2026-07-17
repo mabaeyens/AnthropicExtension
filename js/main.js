@@ -49,13 +49,21 @@ define([
                   options: [
                     { value: "claude-haiku-4-5", label: "Haiku 4.5 (fast, low cost)" },
                     { value: "claude-sonnet-4-6", label: "Sonnet 4.6 (balanced)" },
-                    { value: "claude-opus-4-8", label: "Opus 4.8 (most capable)" }
+                    { value: "claude-opus-4-8", label: "Opus 4.8 (most capable)" },
+                    { value: "ministral-local", label: "Ministral 3 8B (local, via Ollama)" }
                   ],
                   defaultValue: config.API.MODEL
                 },
                 proxyUrl: {
                   ref: "props.proxyUrl",
                   label: "Proxy URL (optional — leave blank to call the API directly)",
+                  type: "string",
+                  expression: "optional",
+                  defaultValue: ""
+                },
+                localUrl: {
+                  ref: "props.localUrl",
+                  label: "Local model URL (Ollama via HTTPS proxy — used when Model is Ministral)",
                   type: "string",
                   expression: "optional",
                   defaultValue: ""
@@ -78,6 +86,12 @@ define([
           config.API.MODEL = layout.props.model;
         }
         config.API.PROXY_URL = layout.props.proxyUrl || '';
+
+        // Local-model endpoint (Ollama via HTTPS proxy). Only override the default when
+        // the property is set, so a blank field keeps the config.js default.
+        if (layout.props.localUrl) {
+          config.API.LOCAL.URL = layout.props.localUrl;
+        }
 
         // The properties panel is the single source of truth for the API key.
         // Sync localStorage to the property on every paint: a non-empty field

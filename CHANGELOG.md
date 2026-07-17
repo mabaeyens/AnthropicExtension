@@ -6,6 +6,35 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [0.3.4] - 2026-07-17
+
+### Added
+- **Local model backend (Ministral 3 8B via Ollama).** The **Model** dropdown now offers
+  *"Ministral 3 8B (local, via Ollama)"* alongside the Claude models. Selecting it routes the
+  request to a local model instead of Anthropic — **no API key required**. The extension speaks
+  the OpenAI chat-completions format for this path and parses `choices[0].message.content`.
+- **"Local model URL"** property (Settings) to point at the Ollama endpoint. On QSEoW (HTTPS) this
+  must be an HTTPS endpoint — the browser cannot call `http://localhost:11434` directly
+  (mixed content), so requests go through the `cm-llm-proxy` `/api/ollama` route
+  (default `https://localhost:3000/api/ollama`).
+- Per-backend request timeout: local calls use a 5-minute client timeout (`API.LOCAL.TIMEOUT`)
+  since local inference is much slower than the hosted API.
+
+### Notes / setup
+- Requires a local [Ollama](https://ollama.com) server and the model. Recommended setup on a
+  small (4 GB) GPU — bake an 8k context for responsiveness:
+  ```
+  ollama pull ministral-3:8b
+  printf 'FROM ministral-3:8b\nPARAMETER num_ctx 8192\n' > Modelfile
+  ollama create ministral-3-demo -f Modelfile
+  ```
+  `API.LOCAL.MODEL_TAG` defaults to `ministral-3-demo`; `CONTEXT_WINDOWS['ministral-local']`
+  is `8192` to match. Plain `ministral-3:8b` also works at Ollama's default context.
+- The companion `cm-llm-proxy` gains a `POST /api/ollama` pass-through route and an `OLLAMA_URL`
+  setting (released separately).
+- Model license: Ministral 3 (Ollama library) is **Apache 2.0**.
+- Demo-grade: on an NVIDIA T1200 (4 GB) the 8.9B Q4 model runs partly on CPU at ~6–7 tok/s.
+
 ## [0.3.3] - 2026-06-14
 
 ### Fixed
