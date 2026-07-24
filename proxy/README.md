@@ -1,6 +1,10 @@
 # cm-llm-proxy
 
-Local HTTPS proxy that forwards requests from the Qlik Sense [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) to the Anthropic API **or to a local Ollama model**.
+> ℹ️ **This proxy now lives in the [AnthropicExtension](../README.md) monorepo**, under `proxy/`.
+> It was previously the standalone `mabaeyens/cm-llm-proxy` repository (now archived); its history
+> was preserved when it was merged here. File issues and PRs against the AnthropicExtension repo.
+
+Local HTTPS proxy that forwards requests from the Qlik Sense [AnthropicExtension](../README.md) to the Anthropic API **or to a local Ollama model**.
 
 ## Why is this needed?
 

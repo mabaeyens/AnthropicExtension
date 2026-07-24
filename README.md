@@ -57,15 +57,19 @@ This extension targets **client-managed Qlik Sense on Windows** (Desktop and Ent
 is intentionally out of scope** — Qlik Cloud already ships native AI assistants, so there is no plan to
 support it here.
 
-Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)) by setting a **Proxy URL** in the extension properties — useful if your organization prefers to keep the API key server-side.
+Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-proxy](./proxy)) by setting a **Proxy URL** in the extension properties — useful if your organization prefers to keep the API key server-side.
+
+> ℹ️ The proxy lives in this repo under [`./proxy`](./proxy). It was previously the standalone
+> [`mabaeyens/cm-llm-proxy`](https://github.com/mabaeyens/cm-llm-proxy) repository, now merged here
+> (with its history) so the extension and proxy version together.
 
 ## Requirements
 
 - Client-managed Qlik Sense on Windows — Desktop or Enterprise (QSEoW) ≥ 3.0 (not Qlik Cloud)
 - Anthropic API key (the **only** thing an end user configures — **not** required for the local model)
-- For the optional proxy mode only: a Node.js proxy at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)
-- For the local models only: a local [Ollama](https://ollama.com) server plus [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy) ≥ v1.1.0 (`/api/ollama` route) — see [Local models](#local-models-ministral-3-via-ollama)
-- For **streamed** answers through a proxy: [cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy) ≥ **v1.2.0**, which pipes the upstream response through instead of buffering it. Older versions still work — the extension just falls back to showing the whole answer at once.
+- For the optional proxy mode only: a Node.js proxy at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](./proxy)
+- For the local models only: a local [Ollama](https://ollama.com) server plus [cm-llm-proxy](./proxy) ≥ v1.1.0 (`/api/ollama` route) — see [Local models](#local-models-ministral-3-via-ollama)
+- For **streamed** answers through a proxy: [cm-llm-proxy](./proxy) ≥ **v1.2.0**, which pipes the upstream response through instead of buffering it. Older versions still work — the extension just falls back to showing the whole answer at once.
 
 ## Download
 
@@ -132,7 +136,7 @@ By default the extension calls `https://api.anthropic.com/v1/messages` directly 
 is needed.
 
 If you prefer to keep the API key off the browser, set a **Proxy URL** in the extension properties
-and run the **[cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)** Node.js server (or any proxy)
+and run the **[cm-llm-proxy](./proxy)** Node.js server (or any proxy)
 that:
 
 - Listens at your Proxy URL (e.g. `https://localhost:3000/api/anthropic`)
@@ -174,7 +178,7 @@ Qlik (HTTPS) → https://localhost:3000/api/ollama  (cm-llm-proxy) → http://lo
    printf 'FROM ministral-3:3b\nPARAMETER num_ctx 8192\n' > Modelfile
    ollama create ministral-3b-demo -f Modelfile
    ```
-2. Run **[cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy)** ≥ v1.1.0 (it exposes the
+2. Run **[cm-llm-proxy](./proxy)** ≥ v1.1.0 (it exposes the
    `/api/ollama` route; ≥ v1.2.0 to stream). Set `OLLAMA_URL` in its `.env` if Ollama isn't at the
    default `http://localhost:11434`, and `QLIK_ORIGIN` to the URL you open the hub with — CORS
    compares it exactly, so `https://localhost` will reject a hub served from `https://myserver`.
