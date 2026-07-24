@@ -1,6 +1,6 @@
 {
   "name": "cm-llm-proxy",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "HTTPS proxy server to forward Qlik Sense requests to the Anthropic API or a local Ollama model",
   "main": "server.js",
   "scripts": {

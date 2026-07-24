@@ -84,6 +84,19 @@ The `/api/ollama` route needs **no** API key; it requires a running local [Ollam
 server (e.g. `ollama pull ministral-3:8b`). Local inference is slower than the hosted API, so this
 route uses a 5-minute timeout.
 
+### Streaming (v1.2.0+)
+
+Both POST routes stream when the request body sets `"stream": true`. The upstream response is piped
+through **untouched** as `text/event-stream`, so the client renders tokens as they arrive instead of
+waiting for the whole answer — which matters most on the slow local path. Earlier versions buffered
+every response, so a client asking to stream still received the answer in one lump.
+
+If the client disconnects (closed tab, cancelled chat), the upstream request is destroyed rather than
+left generating for nobody. Non-streaming requests are unaffected.
+
+> Headers sent on streamed responses: `Cache-Control: no-cache, no-transform` and
+> `X-Accel-Buffering: no`, so anything sitting in front of the proxy doesn't re-buffer the stream.
+
 ## Related repositories
 
 - [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension): Qlik Sense extension that consumes this proxy
