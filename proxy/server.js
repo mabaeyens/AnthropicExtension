@@ -9,6 +9,10 @@ const crypto = require('crypto');
 const { providers } = require('./lib/providers');
 const { loadAnthropicKey, buildUpstreamHeaders } = require('./lib/credentials');
 const { callUpstream } = require('./lib/upstream');
+const { createValidator } = require('./lib/auth-qlik');
+const { authenticate } = require('./middleware/authenticate');
+
+function readFileMaybe(p) { return p ? fs.readFileSync(p) : undefined; }
 
 // ── Boot-time credential validation (P01 §2) ────────────────────────────────
 // Validate config BEFORE touching the filesystem/network, so a missing key fails
@@ -17,6 +21,22 @@ const { callUpstream } = require('./lib/upstream');
 let ANTHROPIC_API_KEY;
 try {
   ANTHROPIC_API_KEY = loadAnthropicKey();
+} catch (err) {
+  console.error('[FATAL]', err.message);
+  process.exit(1);
+}
+
+// Caller authentication validator (P02). Created here so ALL config is validated
+// fail-fast before any cert read / network setup. Mounted on /api further down.
+let validate;
+try {
+  validate = createValidator({
+    sessionUrl: process.env.QLIK_SESSION_URL,
+    cert: readFileMaybe(process.env.QLIK_CERT),
+    key: readFileMaybe(process.env.QLIK_KEY),
+    ca: readFileMaybe(process.env.QLIK_CA),
+    cacheTtlMs: Number(process.env.QLIK_AUTH_CACHE_TTL_MS) || 60000,
+  });
 } catch (err) {
   console.error('[FATAL]', err.message);
   process.exit(1);
@@ -42,10 +62,14 @@ app.use(cors({
 // Parse JSON request bodies
 app.use(express.json({ limit: '10mb' })); // Increase limit if you send large data
 
-// Health check endpoint
+// Health check endpoint (open — no auth, no upstream)
 app.get('/health', (req, res) => {
   res.status(200).send('Proxy server is running');
 });
+
+// Validate the Qlik session for every /api/* request before any credential
+// injection or upstream call (P02). The validator was created + config-checked at boot.
+app.use('/api', authenticate(validate));
 
 // Shared handler for both upstreams. The credential is injected server-side per
 // request; the client's body is forwarded, but NONE of its auth headers are — the
