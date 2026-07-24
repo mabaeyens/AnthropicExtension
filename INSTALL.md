@@ -66,7 +66,7 @@ hypercube is retrieved; if the data to be sent exceeds ~65 KB the panel **asks y
 ## 4. Optional: use a local proxy instead of direct calls
 If your organization prefers to keep the API key off the browser, set a **Proxy URL** in the
 extension properties (e.g. `https://localhost:3000/api/anthropic`) and run a proxy such as
-[cm-llm-proxy](https://github.com/mabaeyens/cm-llm-proxy) that forwards POSTs (with the `x-api-key`
+[cm-llm-proxy](./proxy) (bundled in this repo) that forwards POSTs (with the `x-api-key`
 header) to `https://api.anthropic.com/v1/messages`. The proxy must be reachable from the browser.
 
 ---
