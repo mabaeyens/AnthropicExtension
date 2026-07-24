@@ -44,6 +44,8 @@ app.post('/api/anthropic', async (req, res) => {
     
     console.log('Forwarding request to Anthropic API');
     
+    const wantsStream = req.body && req.body.stream === true;
+
     // Forward the request to Anthropic
     const response = await axios({
       method: 'post',
@@ -54,11 +56,30 @@ app.post('/api/anthropic', async (req, res) => {
         'anthropic-version': '2023-06-01'
       },
       data: req.body,
+      // Piped through untouched when streaming — see /api/ollama.
+      responseType: wantsStream ? 'stream' : 'json',
       timeout: 60000 // 60 second timeout
     });
-    
+
+    if (wantsStream) {
+      console.log('Streaming response from Anthropic API');
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      if (res.flushHeaders) res.flushHeaders();
+
+      req.on('close', () => response.data.destroy());
+      response.data.on('error', (err) => {
+        console.error('Anthropic stream error:', err.message);
+        res.end();
+      });
+      response.data.pipe(res);
+      return;
+    }
+
     console.log('Received response from Anthropic API');
-    
+
     // Return Anthropic's response to the client
     res.json(response.data);
   } catch (error) {
@@ -84,14 +105,37 @@ app.post('/api/ollama', async (req, res) => {
 
   try {
     const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434/v1/chat/completions';
+    const wantsStream = req.body && req.body.stream === true;
 
     const response = await axios({
       method: 'post',
       url: ollamaUrl,
       headers: { 'Content-Type': 'application/json' },
       data: req.body,
+      // Streamed replies must be piped through untouched — buffering them here
+      // would defeat the point, since the client renders tokens as they land.
+      responseType: wantsStream ? 'stream' : 'json',
       timeout: 300000 // 5 min — local inference is far slower than the hosted API
     });
+
+    if (wantsStream) {
+      console.log('Streaming response from Ollama');
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');   // in case another proxy sits in front
+      if (res.flushHeaders) res.flushHeaders();
+
+      // If the browser goes away (new chat, model switch, closed tab), stop
+      // generating instead of leaving Ollama working for nobody.
+      req.on('close', () => response.data.destroy());
+      response.data.on('error', (err) => {
+        console.error('Ollama stream error:', err.message);
+        res.end();
+      });
+      response.data.pipe(res);
+      return;
+    }
 
     console.log('Received response from Ollama');
     res.json(response.data);
