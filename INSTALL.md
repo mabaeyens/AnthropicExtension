@@ -1,4 +1,4 @@
-# Install & Run — Anthropic AI Assistant (v0.3.3)
+# Install & Run — Anthropic AI Assistant (v0.4.0)
 
 > ⚠️ **Demo only — no warranty, no liability.** This is a demonstration asset, **not** a Qlik product
 > and **not** production-hardened. **Neither Qlik nor the author accept any liability** for any issue,
@@ -43,12 +43,17 @@ reload Qlik Sense Desktop.
 2. From the **Custom objects** panel, drag **“Anthropic AI Assistant”** onto the sheet.
 
 ## 3. Configure & use (end user)
-1. In the extension's **properties panel**, paste your **Anthropic API key**.
-   (Optionally pick a **Model**: Haiku 4.5 = fast/cheap, Sonnet 4.6 = balanced, Opus 4.8 = most capable.)
+1. In the extension's **properties panel**, paste your **Anthropic API key** (not needed if you only
+   use a local model).
 2. In the floating panel, click **Add Chart**, click one or more charts on the sheet, type a question,
-   and **Submit**. Replies appear in a **Markdown chat thread** with memory (newest on top); use
-   **New chat** to reset and the **Copy** button to copy a response.
-3. Optionally click **Suggest a chart** — Claude proposes a chart and the panel renders a live
+   and **Submit**. The answer **streams in as it is generated**; replies appear in a **Markdown chat
+   thread** with memory (newest on top). Use **New chat** to reset and the **Copy** button to copy a
+   response. Streaming can be turned off under **Advanced Options**.
+3. Use **Pick model** (next to *Submit*) to switch model at any time: Haiku 4.5 = fast/cheap,
+   Sonnet 4.6 = balanced, Opus 4.8 = most capable, or a local Ministral. Switching **clears the
+   conversation** and asks you to confirm first. The model that answered is named in each reply's
+   footer.
+4. Optionally click **Suggest a chart** — the model proposes a chart and the panel renders a live
    preview. With the sheet open in **Edit mode**, **Add to sheet** places it below existing objects (or
    offers a new sheet when the current one is full).
 
