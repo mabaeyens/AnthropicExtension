@@ -1,0 +1,126 @@
+# cm-llm-proxy
+
+Local HTTPS proxy that forwards requests from the Qlik Sense [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension) to the Anthropic API **or to a local Ollama model**.
+
+## Why is this needed?
+
+Qlik Sense Server enforces CORS restrictions and does not allow direct calls to external APIs from the browser. This proxy runs on the Qlik server (or locally) and acts as a secure intermediary.
+
+```
+Qlik Sense (browser) → https://localhost:3000/api/anthropic → api.anthropic.com
+Qlik Sense (browser) → https://localhost:3000/api/ollama    → http://localhost:11434 (Ollama)
+```
+
+The `/api/ollama` route additionally bypasses **mixed-content** blocking: an HTTPS Qlik page cannot
+call a plain-HTTP local Ollama server directly, so it goes through this HTTPS proxy instead.
+
+## Requirements
+
+- Node.js >= 18
+- SSL certificates for `localhost:3000` (see Certificates section)
+
+## Setup
+
+```bash
+# 1. Copy and edit the environment file
+cp .env.example .env
+# Edit .env: set QLIK_ORIGIN to your Qlik Sense server URL
+
+# 2. Install dependencies
+npm install
+```
+
+## Configuration
+
+All settings are configured via `.env` (copied from `.env.example`):
+
+| Variable | Description | Default |
+|---|---|---|
+| `QLIK_ORIGIN` | Qlik Sense server URL allowed by CORS | `https://your-qlik-server` |
+| `PORT` | Proxy server port | `3000` |
+| `OLLAMA_URL` | Local Ollama OpenAI-compatible endpoint (for `/api/ollama`) | `http://localhost:11434/v1/chat/completions` |
+
+## Certificates
+
+Certificates are **not in the repo** — `certs/*.pem` is git-ignored, since a private key
+doesn't belong in version control and a `localhost` certificate is useless to anyone else.
+The server won't start until you generate your own:
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+  -keyout certs/localhost3000-key.pem \
+  -out certs/localhost3000-cert.pem \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
+
+> The `subjectAltName` is required — browsers reject certificates that only carry a CN.
+
+The certificate must then be trusted, or the browser will silently block the extension's
+request (an XHR failure with no status, not a warning you can click through). On Windows,
+Chrome and Edge read the OS store:
+
+```powershell
+certutil -user -addstore Root certs\localhost3000-cert.pem
+```
+
+Restart the browser afterwards. To remove it later, use `certutil -user -delstore Root <thumbprint>`.
+
+## Usage
+
+```bash
+npm start
+```
+
+The server starts at `https://localhost:3000`. Available endpoints:
+
+- `GET  /health` — Check that the proxy is running
+- `POST /api/anthropic` — Forwards the request to `api.anthropic.com/v1/messages`
+- `POST /api/ollama` — Forwards an OpenAI-compatible chat body to the local Ollama server (`OLLAMA_URL`)
+
+The Anthropic API key is passed per request via the `x-api-key` header (managed by the Qlik extension).
+The `/api/ollama` route needs **no** API key; it requires a running local [Ollama](https://ollama.com)
+server (e.g. `ollama pull ministral-3:8b`). Local inference is slower than the hosted API, so this
+route uses a 5-minute timeout.
+
+### Streaming (v1.2.0+)
+
+Both POST routes stream when the request body sets `"stream": true`. The upstream response is piped
+through **untouched** as `text/event-stream`, so the client renders tokens as they arrive instead of
+waiting for the whole answer — which matters most on the slow local path. Earlier versions buffered
+every response, so a client asking to stream still received the answer in one lump.
+
+If the client disconnects (closed tab, cancelled chat), the upstream request is destroyed rather than
+left generating for nobody. Non-streaming requests are unaffected.
+
+> Headers sent on streamed responses: `Cache-Control: no-cache, no-transform` and
+> `X-Accel-Buffering: no`, so anything sitting in front of the proxy doesn't re-buffer the stream.
+
+## Related repositories
+
+- [AnthropicExtension](https://github.com/mabaeyens/AnthropicExtension): Qlik Sense extension that consumes this proxy
+- [RAG](https://github.com/mabaeyens/RAG): RAG pipeline with ChromaDB and local embeddings
+
+## 🛠️ Development Workflow: Human-AI Collaboration
+
+This project is the result of a strategic collaboration between human design and AI-assisted code generation.
+
+- **Architecture & Logic:** Fully defined by the author. This includes system structure, business rules, data flow, and implementation strategy.
+- **Code Generation:** The syntactic implementation and line-by-line code writing was performed by **Claude Code**, following precise and iterative instructions provided by the author.
+- **Supervision & Refinement:** All code was manually reviewed, tested, and adjusted to ensure quality, consistency, and compliance with project standards.
+
+This approach demonstrates the ability to direct advanced AI tools to accelerate development without sacrificing creative control or technical quality.
+
+## 📄 License
+
+This project is licensed under the **MIT License**. You can find the full text in the [`LICENSE`](./LICENSE) file.
+
+> **Note on authorship:** Although much of the source code was generated by an AI, the creative direction, architecture, and final integration are human work. Usage rights are granted under the terms of the MIT License.
+
+## 🚀 Contributing
+
+Feel free to fork this project!
+- If you find a bug, open an issue.
+- If you have an improvement, submit a Pull Request.
+- Feel free to use this code in your own projects!

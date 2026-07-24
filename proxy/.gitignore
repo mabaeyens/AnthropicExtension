@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Certificates — generated locally, never committed. A private key has no
+# business in a repo, and a localhost cert is useless to anyone else anyway.
+certs/*.pem
+
+# Environment
+.env
+*.env
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
