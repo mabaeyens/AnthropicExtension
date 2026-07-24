@@ -28,3 +28,6 @@ __pycache__/
 # Claude Code local files (kept locally, not shipped in the repo)
 .claude/
 CLAUDE.md
+
+# Hardening specs — local working documents, not shipped in the repo
+specs/
