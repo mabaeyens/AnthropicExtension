@@ -26,6 +26,9 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > [Local models](#local-models-ministral-3-via-ollama).
 >
 > See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), and [`diagrams.md`](./diagrams.md).
+> Design references for the in-progress production-hardening effort (target architecture, not yet
+> implemented): [`docs/security-model.md`](./docs/security-model.md) and
+> [`docs/concurrency-model.md`](./docs/concurrency-model.md).
 
 > ℹ️ This repository is **not public yet**; it may be made public in the future. The disclaimer above
 > applies regardless.
