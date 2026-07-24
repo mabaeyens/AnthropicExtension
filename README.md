@@ -42,15 +42,30 @@ All settings are configured via `.env` (copied from `.env.example`):
 
 ## Certificates
 
-The files `certs/localhost3000-cert.pem` and `certs/localhost3000-key.pem` in the repo are **empty placeholders**. Generate your own self-signed certificates:
+Certificates are **not in the repo** — `certs/*.pem` is git-ignored, since a private key
+doesn't belong in version control and a `localhost` certificate is useless to anyone else.
+The server won't start until you generate your own:
 
 ```bash
-openssl req -x509 -newkey rsa:4096 -keyout certs/localhost3000-key.pem \
-  -out certs/localhost3000-cert.pem -days 365 -nodes \
-  -subj "/CN=localhost"
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+  -keyout certs/localhost3000-key.pem \
+  -out certs/localhost3000-cert.pem \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 ```
 
-> The certificate must be imported as trusted in the browser and in Qlik Sense to avoid SSL errors.
+> The `subjectAltName` is required — browsers reject certificates that only carry a CN.
+
+The certificate must then be trusted, or the browser will silently block the extension's
+request (an XHR failure with no status, not a warning you can click through). On Windows,
+Chrome and Edge read the OS store:
+
+```powershell
+certutil -user -addstore Root certs\localhost3000-cert.pem
+```
+
+Restart the browser afterwards. To remove it later, use `certutil -user -delstore Root <thumbprint>`.
 
 ## Usage
 

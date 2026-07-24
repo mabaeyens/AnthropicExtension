@@ -2,8 +2,9 @@
 node_modules/
 npm-debug.log*
 
-# Certificates (generate locally, do not commit real certs)
-# certs/*.pem  ← placeholder files are committed; replace with real certs locally
+# Certificates — generated locally, never committed. A private key has no
+# business in a repo, and a localhost cert is useless to anyone else anyway.
+certs/*.pem
 
 # Environment
 .env
