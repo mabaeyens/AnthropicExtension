@@ -11,6 +11,9 @@ const { loadAnthropicKey, buildUpstreamHeaders } = require('./lib/credentials');
 const { callUpstream } = require('./lib/upstream');
 const { createValidator } = require('./lib/auth-qlik');
 const { authenticate } = require('./middleware/authenticate');
+const { createLimiter } = require('./lib/limiter');
+const { admission } = require('./middleware/admission');
+const { installGracefulShutdown } = require('./lib/shutdown');
 
 function readFileMaybe(p) { return p ? fs.readFileSync(p) : undefined; }
 
@@ -46,6 +49,21 @@ const PROVIDERS = providers();
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Concurrency admission control (P03 / X02). Limits are config-driven with the
+// documented defaults.
+const limiter = createLimiter({
+  maxGlobal: Number(process.env.MAX_GLOBAL_INFLIGHT) || 24,
+  maxUser: Number(process.env.MAX_USER_INFLIGHT) || 3,
+  maxQueue: Number(process.env.MAX_QUEUE) || 100,
+  queueTimeoutMs: Number(process.env.QUEUE_TIMEOUT_MS) || 10000,
+});
+
+// Readiness flag flipped by graceful shutdown; the P06 /ready endpoint will read it.
+let ready = true;
+const setReady = (v) => { ready = v; };
+// eslint-disable-next-line no-unused-vars
+function isReady() { return ready; }
+
 const options = {
   key: fs.readFileSync('./certs/localhost3000-key.pem'), // Path to your private key
   cert: fs.readFileSync('./certs/localhost3000-cert.pem'), // Path to your certificate
@@ -70,6 +88,8 @@ app.get('/health', (req, res) => {
 // Validate the Qlik session for every /api/* request before any credential
 // injection or upstream call (P02). The validator was created + config-checked at boot.
 app.use('/api', authenticate(validate));
+// Then admission control (P03) — needs req.qlikUser from authenticate above.
+app.use('/api', admission(limiter));
 
 // Shared handler for both upstreams. The credential is injected server-side per
 // request; the client's body is forwarded, but NONE of its auth headers are — the
@@ -114,6 +134,9 @@ function makeHandler(providerName) {
         console.error(`[${provider.name}] stream error:`, err.message);
         res.end();
       });
+      // .pipe() natively honours backpressure — it pauses the upstream when res's write
+      // buffer fills and resumes on 'drain' — so a slow client can't balloon proxy
+      // memory (P03 §6).
       response.data.pipe(res);
       return;
     }
@@ -128,9 +151,18 @@ app.post('/api/anthropic', makeHandler('anthropic'));
 app.post('/api/ollama', makeHandler('ollama'));
 
 // Start the server
-https.createServer(options, app).listen(port, () => {
+const server = https.createServer(options, app);
+server.listen(port, () => {
   console.log(`Proxy server running at https://localhost:${port}`);
   console.log(`Health check: https://localhost:${port}/health`);
   console.log(`Anthropic endpoint: https://localhost:${port}/api/anthropic`);
   console.log(`Local model endpoint: https://localhost:${port}/api/ollama`);
+});
+
+// Graceful shutdown (P03 §8): stop accepting, drain the queue, let in-flight finish.
+installGracefulShutdown({
+  server,
+  limiter,
+  setReady,
+  drainTimeoutMs: Number(process.env.DRAIN_TIMEOUT_MS) || 25000,
 });

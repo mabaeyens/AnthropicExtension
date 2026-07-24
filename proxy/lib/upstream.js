@@ -1,6 +1,14 @@
 'use strict';
 
 const axios = require('axios');
+const http = require('http');
+const https = require('https');
+
+// Keep-alive agents so high concurrency reuses sockets instead of exhausting ephemeral
+// ports (P03 §7). Bounded socket pools.
+const MAX_SOCKETS = Number(process.env.UPSTREAM_MAX_SOCKETS) || 64;
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: MAX_SOCKETS });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: MAX_SOCKETS });
 
 // Transient upstream failures worth retrying (P01 §6).
 const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
@@ -41,6 +49,8 @@ async function callUpstream(opts, deps = {}) {
         responseType: stream ? 'stream' : 'json',
         timeout: timeoutMs,
         maxRedirects: 0,
+        httpAgent,
+        httpsAgent,
       });
     } catch (err) {
       const canRetry = !stream && attempt < maxRetries && isRetryable(err);
