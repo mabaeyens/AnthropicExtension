@@ -30,10 +30,12 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
   }
 
   // Master-item lookup populated from the app context. We resolve a master item
-  // to its UNDERLYING field(s)/expression (as a string) rather than a
-  // {qLibraryId} object, because visualization.create accepts plain
-  // field-name / "=expression" strings reliably across engine versions, whereas
-  // a {qLibraryId} column was rejected with "QdefOrQlibraryid".
+  // to its UNDERLYING field(s)/expression (a string), then wrap every column in
+  // an explicit {qDef: …} object for visualization.create. Bare strings are
+  // resolved by the client's column mapper and are rejected with
+  // "Devhub.Cols.QdefOrQlibraryid" whenever it can't match the token to a field
+  // or a master-item id; a {qLibraryId} column hit the same error. An explicit
+  // qDef always satisfies the validator.
   var masterDims = { exact: {}, lower: {} };   // name -> qFieldDefs[]
   var masterMeas = { exact: {}, lower: {} };   // name -> expression
 
@@ -90,6 +92,22 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     var expr = lookup(masterMeas, name);
     if (expr) return /^\s*=/.test(expr) ? expr : '=' + expr;
     return /^\s*=/.test(m) ? m : '=' + m;
+  }
+
+  // Wrap a resolved token in an explicit column object. visualization.create
+  // accepts inline dimension/measure definitions; every column must expose a
+  // qDef (or qLibraryId) or the client rejects it with "QdefOrQlibraryid".
+  function dimensionColumn(d) {
+    var f = resolveDimension(d);
+    return {
+      qDef: { qFieldDefs: [f], qFieldLabels: [unbracket(d)] },
+      qNullSuppression: true
+    };
+  }
+  function measureColumn(m) {
+    return {
+      qDef: { qDef: resolveMeasure(m), qLabel: unbracket(m) }
+    };
   }
 
   function escapeHtml(value) {
@@ -193,18 +211,19 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     },
 
     /**
-     * Build the columns array for visualization.create, resolving each token to
-     * a master item (by id) when one exists, otherwise a field name (dimensions)
-     * or an aggregation expression (measures). Histogram takes a single
+     * Build the columns array for visualization.create. Each token resolves to
+     * a master item's underlying definition when one exists, otherwise a field
+     * name (dimensions) or an aggregation expression (measures), and is wrapped
+     * in an explicit qDef column object. Histogram takes a single
      * dimension and computes frequency itself, so measures are dropped.
      */
     columnsFor: function (spec) {
       if (spec.type === 'histogram') {
-        return (spec.dimensions || []).slice(0, 1).map(resolveDimension);
+        return (spec.dimensions || []).slice(0, 1).map(dimensionColumn);
       }
       var cols = [];
-      (spec.dimensions || []).forEach(function (d) { cols.push(resolveDimension(d)); });
-      (spec.measures || []).forEach(function (m) { cols.push(resolveMeasure(m)); });
+      (spec.dimensions || []).forEach(function (d) { cols.push(dimensionColumn(d)); });
+      (spec.measures || []).forEach(function (m) { cols.push(measureColumn(m)); });
       return cols;
     },
 
@@ -270,6 +289,9 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
           })
           .catch(function (err) {
             var msg = (err && err.message) ? err.message : String(err);
+            // The columns are the usual culprit — log them so a failure can be
+            // diagnosed from the browser console.
+            console.error('Anthropic: chart render failed', msg, spec, columns);
             $host.html('<div class="anthropic-chart-error">Could not render chart: ' +
               escapeHtml(msg) + '</div>');
             reject(err instanceof Error ? err : new Error(msg));

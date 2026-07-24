@@ -6,6 +6,22 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [0.3.5] - 2026-07-24
+
+### Fixed
+- **"Suggest a chart" failed to render** with `Could not render chart:
+  Devhub.Cols.QdefOrQlibraryid, Devhub.Cols.QdefOrQlibraryid`. Columns were passed to
+  `visualization.create()` as bare strings, which Qlik's client-side column mapper rejects when it
+  cannot match the token to a field or master-item id — one error per rejected column. Each column
+  is now wrapped in an explicit definition object (`{ qDef: { qFieldDefs: […] } }` for dimensions,
+  `{ qDef: { qDef: '=…' } }` for measures), which always satisfies the validator. Master-item
+  resolution to the underlying field/expression is unchanged.
+- A chart render failure now logs the spec **and** the resolved columns to the browser console, so
+  a bad token can be identified without guesswork.
+- `package.ps1` stamped the `.qext` description twice (`v0.3.4 build 25 — v0.3.4 build 25 — …`).
+  The strip-pattern's literal em dash was mis-decoded under Windows PowerShell 5.1, so the existing
+  prefix never matched; both sides of the replace now build the dash from its code point.
+
 ## [0.3.4] - 2026-07-17
 
 ### Added

@@ -19,7 +19,12 @@ $build = if ($configText -match 'BUILD:\s*(\d+)') { $matches[1] } else { '0' }
 
 $qextPath = Join-Path $PSScriptRoot "AnthropicExtension.qext"
 $qextRaw  = [System.IO.File]::ReadAllText($qextPath)
-$qextRaw  = [regex]::Replace($qextRaw, '("description"\s*:\s*")(v[\d.]+ build \d+ — )?', "`${1}v$version build $build $([char]0x2014) ")
+# The em dash is built from its code point on BOTH sides: a literal — in this
+# script is mis-decoded under Windows PowerShell 5.1, so the strip-pattern would
+# never match and the prefix would be stamped twice.
+$dash     = [char]0x2014
+$stampRe  = '("description"\s*:\s*")(v[\d.]+ build \d+ ' + $dash + ' )?'
+$qextRaw  = [regex]::Replace($qextRaw, $stampRe, "`${1}v$version build $build $dash ")
 [System.IO.File]::WriteAllText($qextPath, $qextRaw)   # UTF-8, no BOM
 Write-Host "Stamped .qext description: v$version build $build"
 
