@@ -51,6 +51,9 @@ define([], function() {
                     <label><input type="checkbox" id="include-context" checked> Include app context (data model) on first message</label>
                   </div>
                   <div class="optimization-row">
+                    <label><input type="checkbox" id="stream-response" checked> Stream the answer as it is generated</label>
+                  </div>
+                  <div class="optimization-row">
                     <label>Max data rows: <input type="number" id="max-data-rows" value="1000" min="10" max="10000"></label>
                   </div>
                   <div class="optimization-row">
@@ -88,7 +91,14 @@ define([], function() {
           <div class="submit-area">
             <button id="submit-to-anthropic" class="lui-button">Submit</button>
             <button id="suggest-chart-button" class="lui-button" title="Ask the AI to propose a Qlik chart and preview it">Suggest a chart</button>
+            <!-- Model picker: button + drop-up menu, populated by renderModelPicker() -->
+            <div class="model-picker">
+              <button id="anthropic-model-button" class="lui-button model-picker-button"
+                      title="Choose which model answers">Pick model <span class="model-caret">&#9662;</span></button>
+              <div id="anthropic-model-menu" class="model-menu" style="display:none;"></div>
+            </div>
           </div>
+          <div id="anthropic-active-model" class="active-model-line"></div>
           <div id="debug-area" class="debug-area" style="display:none; margin-top:10px; border-top:1px solid #ccc; padding-top:10px;">
             <button id="test-direct-api" class="lui-button">Test Direct API Call</button>
           </div>

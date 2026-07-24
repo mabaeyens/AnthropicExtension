@@ -110,6 +110,112 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
     };
   }
 
+  // ── Lenient spec parsing ───────────────────────────────────────────────────
+  // Smaller local models drift off the requested schema: they add // comments,
+  // wrap fields in backticks, emit bare Sum([Field]) expressions, and return
+  // measure OBJECTS instead of strings. None of that is valid JSON, so a strict
+  // JSON.parse threw the whole (otherwise usable) suggestion away.
+
+  /** Remove // and /* *\/ comments, leaving string literals untouched. */
+  function stripJsonComments(src) {
+    var out = '', i = 0, n = src.length, inStr = false, quote = '';
+    while (i < n) {
+      var ch = src.charAt(i), next = src.charAt(i + 1);
+      if (inStr) {
+        out += ch;
+        if (ch === '\\') { out += next; i += 2; continue; }
+        if (ch === quote) inStr = false;
+        i++; continue;
+      }
+      if (ch === '"' || ch === "'") { inStr = true; quote = ch; out += ch; i++; continue; }
+      if (ch === '/' && next === '/') { while (i < n && src.charAt(i) !== '\n') i++; continue; }
+      if (ch === '/' && next === '*') {
+        i += 2;
+        while (i < n && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) i++;
+        i += 2; continue;
+      }
+      out += ch; i++;
+    }
+    return out;
+  }
+
+  /** Best-effort repairs: comments, trailing commas, backtick quoting. */
+  function relaxJson(src) {
+    return stripJsonComments(src)
+      .replace(/`/g, '"')            // Sum([`Field`]) → Sum(["Field"]) (still salvage-only)
+      .replace(/,(\s*[}\]])/g, '$1'); // trailing comma before } or ]
+  }
+
+  /**
+   * Coerce one dimension/measure entry to a token string. Models sometimes send
+   * { name, expression, … } objects; take the expression-ish field, else the name.
+   */
+  function coerceToken(v) {
+    if (v == null) return '';
+    if (typeof v === 'string') return v.trim();
+    if (Array.isArray(v)) return coerceToken(v[0]);
+    if (typeof v === 'object') {
+      var keys = ['expression', 'expr', 'def', 'qDef', 'formula', 'field', 'name', 'label'];
+      for (var i = 0; i < keys.length; i++) {
+        if (typeof v[keys[i]] === 'string' && v[keys[i]].trim()) return v[keys[i]].trim();
+      }
+    }
+    return '';
+  }
+
+  /** Slice out a balanced [...] array that follows "<key>": in `src`. */
+  function sliceArray(src, key) {
+    var m = new RegExp('"' + key + '"\\s*:\\s*\\[').exec(src);
+    if (!m) return '';
+    var start = m.index + m[0].length - 1, depth = 0;
+    for (var i = start; i < src.length; i++) {
+      var c = src.charAt(i);
+      if (c === '[') depth++;
+      else if (c === ']') { depth--; if (depth === 0) return src.slice(start, i + 1); }
+    }
+    return '';
+  }
+
+  /**
+   * Last resort when the block can't be parsed as JSON at all: pull the fields we
+   * actually need out of the text. Inside dimensions/measures prefer explicit
+   * "expression" values, else take the quoted strings that aren't schema keys.
+   */
+  function salvageSpec(src) {
+    function str(key) {
+      var m = new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"').exec(src);
+      return m ? m[1] : '';
+    }
+    var SCHEMA_KEYS = /^(name|type|expression|expr|aggregation|format|alias|field|fields|label|total|value|values|dimension)$/i;
+    function tokens(key) {
+      var body = sliceArray(src, key);
+      if (!body) return [];
+      var out = [], m;
+      var exprRe = /"(?:expression|expr|def|formula)"\s*:\s*"([^"]+)"/g;
+      while ((m = exprRe.exec(body)) !== null) out.push(m[1].trim());
+      if (out.length) return out;
+      // No explicit expressions — take quoted strings, skipping schema keys and
+      // the values that immediately follow them (e.g. "format": "$#").
+      var strRe = /"([^"]+)"\s*(:)?/g;
+      var skipNext = false;
+      while ((m = strRe.exec(body)) !== null) {
+        var isKey = m[2] === ':';
+        if (isKey) { skipNext = true; continue; }
+        if (skipNext) { skipNext = false; continue; }
+        if (!SCHEMA_KEYS.test(m[1])) out.push(m[1].trim());
+      }
+      return out;
+    }
+    var type = str('type');
+    if (!type) return null;
+    return {
+      type: type,
+      title: str('title') || 'Suggested chart',
+      dimensions: tokens('dimensions'),
+      measures: tokens('measures')
+    };
+  }
+
   function escapeHtml(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -156,7 +262,13 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
         'If no suitable master item exists, use a real FIELD name for a dimension and an ' +
         'aggregation expression over raw fields for a measure (e.g. "=Sum(Sales)"). ' +
         'Use only names that appear in the app context. For a histogram, supply a single ' +
-        'numeric dimension and no measure. Output nothing except the code block.';
+        'numeric dimension and no measure. ' +
+        // Smaller local models otherwise invent extra keys, add // comments, and
+        // return measure objects — all of which break a strict JSON parse.
+        'STRICT OUTPUT RULES: "dimensions" and "measures" must each be an array of plain ' +
+        'STRINGS — never objects. Use ONLY the four keys shown above (type, title, dimensions, ' +
+        'measures); add no others. Emit valid JSON only: no comments, no trailing commas, no ' +
+        'backticks, double quotes throughout. Output nothing except the code block.';
     },
 
     /**
@@ -178,26 +290,38 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
       }
       if (!json) return null;
 
-      var spec;
+      // Strict parse, then the same text with comments/trailing commas repaired,
+      // then a regex salvage. Each step is strictly more forgiving than the last.
+      var spec = null;
       try {
         spec = JSON.parse(json);
       } catch (e) {
-        return null;
+        try {
+          spec = JSON.parse(relaxJson(json));
+        } catch (e2) {
+          spec = salvageSpec(relaxJson(json));
+          if (spec) console.warn('Anthropic: chart spec salvaged from malformed JSON', spec);
+        }
       }
       if (!spec || typeof spec !== 'object') return null;
 
       var type = String(spec.type || '').toLowerCase().trim();
       if (!type) return null;
 
-      var dims = Array.isArray(spec.dimensions) ? spec.dimensions.filter(Boolean) : [];
-      var meas = Array.isArray(spec.measures) ? spec.measures.filter(Boolean) : [];
+      // Entries may be strings or { name, expression, … } objects.
+      function toTokens(v) {
+        if (!Array.isArray(v)) return [];
+        return v.map(coerceToken).filter(function (s) { return !!s; });
+      }
+      var dims = toTokens(spec.dimensions);
+      var meas = toTokens(spec.measures);
       if (dims.length === 0 && meas.length === 0) return null;
 
       return {
         type: type,
         title: spec.title ? String(spec.title) : 'Suggested chart',
-        dimensions: dims.map(String),
-        measures: meas.map(String)
+        dimensions: dims,
+        measures: meas
       };
     },
 

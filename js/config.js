@@ -16,8 +16,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.3.5',
-    BUILD: 26,
+    VERSION: '0.4.0',
+    BUILD: 31,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -31,11 +31,27 @@ define([], function() {
       PROXY_URL: '',
       // Anthropic API version header, required for direct browser calls.
       VERSION: '2023-06-01',
-      // Default model. Overridden per-instance from the extension's "Model" property.
+      // Active model. Seeded from the extension's "Model" property, then owned by
+      // the in-panel model picker for the rest of the session (see MODEL_LOCKED).
       MODEL: 'claude-haiku-4-5',
-      // Models offered in the properties-panel dropdown. 'ministral-local' is a
-      // synthetic id selecting the local (Ollama) backend rather than an Anthropic model.
-      MODELS: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8', 'ministral-local'],
+      // Set to true once the user picks a model in the chat panel, so paint()
+      // stops re-applying the properties-panel value over their choice.
+      MODEL_LOCKED: false,
+      // The model registry — drives BOTH the properties-panel dropdown and the
+      // in-panel picker. Entries with local:true are served by Ollama (OpenAI
+      // chat-completions format, no API key); `tag` is the Ollama model name.
+      MODELS: [
+        { id: 'claude-haiku-4-5',   label: 'Haiku 4.5',        hint: 'fast, low cost' },
+        { id: 'claude-sonnet-4-6',  label: 'Sonnet 4.6',       hint: 'balanced' },
+        { id: 'claude-opus-4-8',    label: 'Opus 4.8',         hint: 'most capable' },
+        { id: 'ministral-local',    label: 'Ministral 3 8B',   hint: 'local, via Ollama',
+          local: true, tag: 'ministral-3-demo' },
+        // Derived from ministral-3:3b with num_ctx 8192 — Ollama's 64k default
+        // inflates the KV cache to ~10 GB and pushes the model almost entirely
+        // onto the CPU. Half the footprint of the 8B at similar speed.
+        { id: 'ministral-local-3b', label: 'Ministral 3 3B',   hint: 'local, lighter/faster',
+          local: true, tag: 'ministral-3b-demo' }
+      ],
       // Local-model backend (Ollama via the HTTPS proxy). Used when MODEL === 'ministral-local'.
       // Requests are sent in OpenAI chat-completions format; no API key is required.
       LOCAL: {
@@ -43,10 +59,10 @@ define([], function() {
         // from the extension's "Local model URL" property. On QSEoW (HTTPS) this must be an
         // HTTPS endpoint — the browser cannot call http://localhost:11434 directly.
         URL: 'https://localhost:3000/api/ollama',
-        // Ollama model name sent in the payload's `model` field. This is a derived model
-        // with num_ctx baked to 8192 (see CHANGELOG for the one-line Modelfile). 8k keeps
-        // the 4 GB-GPU demo responsive (~6-7 tok/s) while fitting trimmed chart payloads.
-        // Plain 'ministral-3:8b' also works but runs at Ollama's default context length.
+        // Fallback Ollama model name, used only if the selected entry has no `tag`.
+        // 'ministral-3-demo' is a derived model with num_ctx baked to 8192 (see CHANGELOG
+        // for the one-line Modelfile) — 8k keeps the 4 GB-GPU demo responsive (~6-7 tok/s)
+        // while fitting trimmed chart payloads.
         MODEL_TAG: 'ministral-3-demo',
         LABEL: 'Ministral 3 8B (local)',
         // Client-side request timeout for local calls (ms). Much larger than the hosted
@@ -63,9 +79,11 @@ define([], function() {
         'claude-haiku-4-5': 200000,
         'claude-sonnet-4-6': 200000,
         'claude-opus-4-8': 200000,
-        // Local Ministral 3 8B — must match (or be ≤) the Ollama model's baked num_ctx so the
-        // extension trims payloads before Ollama would silently truncate. Demo model = 8192.
-        'ministral-local': 8192
+        // Local Ministral models — must match (or be ≤) the Ollama model's num_ctx so the
+        // extension trims payloads before Ollama would silently truncate. The 8B demo model
+        // has 8192 baked in; the 3B runs at Ollama's default, so keep the same guard.
+        'ministral-local': 8192,
+        'ministral-local-3b': 8192
       }
     },
     
@@ -93,7 +111,11 @@ define([], function() {
     CHAT: {
       // Max number of prior messages (user+assistant) sent as history per request.
       // Bounds heap growth and per-request token cost over a long session.
-      HISTORY_MAX: 12
+      HISTORY_MAX: 12,
+      // Render answers token-by-token as they arrive (SSE). Falls back to a
+      // buffered request automatically when the browser or the proxy can't
+      // stream. Set false to always wait for the complete response.
+      STREAM: true
     },
 
     // Feature flags

@@ -3,13 +3,37 @@ define(['jquery', './security', './config', './data-format'], function($, securi
 
   return {
     /**
-     * True when the selected model is the local (Ollama) backend rather than an
-     * Anthropic model. In that case requests use OpenAI chat-completions format,
-     * are routed to config.API.LOCAL.URL, and need no API key.
+     * Look up a model registry entry (config.API.MODELS) by id. Falls back to a
+     * synthetic entry so an unknown id still renders and still routes to the
+     * hosted API rather than throwing.
+     * @param {string} [id] - defaults to the active model
+     * @returns {{id: string, label: string, hint?: string, local?: boolean, tag?: string}}
+     */
+    getModelEntry: function(id) {
+      var wanted = id || config.API.MODEL;
+      var found = (config.API.MODELS || []).filter(function(m) { return m.id === wanted; })[0];
+      return found || { id: wanted, label: wanted };
+    },
+
+    /** Human-readable name for a model id, e.g. "Ministral 3 8B (local, via Ollama)". */
+    getModelLabel: function(id) {
+      var m = this.getModelEntry(id);
+      return m.label + (m.hint ? ' (' + m.hint + ')' : '');
+    },
+
+    /**
+     * True when the given (or active) model is a local (Ollama) backend rather
+     * than an Anthropic model. In that case requests use OpenAI chat-completions
+     * format, are routed to config.API.LOCAL.URL, and need no API key.
      * @returns {boolean}
      */
-    isLocalModel: function() {
-      return config.API.MODEL === 'ministral-local';
+    isLocalModel: function(id) {
+      return !!this.getModelEntry(id).local;
+    },
+
+    /** Ollama model name for the active local model. */
+    localTag: function() {
+      return this.getModelEntry().tag || config.API.LOCAL.MODEL_TAG;
     },
 
     /**
@@ -52,6 +76,72 @@ define(['jquery', './security', './config', './data-format'], function($, securi
     },
 
     /**
+     * Assemble everything a request needs: the turn's message text + metrics, the
+     * backend-shaped payload, and the resolved transport. Shared by the buffered
+     * and streaming paths so they can never build different requests.
+     * @param {object} data - { userPrompt, chartData, context, systemPrompt, history }
+     * @param {boolean} [stream] - request an incremental (SSE) response
+     * @returns {{local: boolean, payload: object, payloadString: string,
+     *            transport: object, metrics: object}}
+     * @throws {Error} when a hosted model is selected with no API key stored
+     */
+    prepareRequest: function(data, stream) {
+      const local = this.isLocalModel();
+
+      // Get the API key (shared across all apps). The local (Ollama) backend needs none.
+      const apiKey = security.getAPIKey();
+      if (!local && !apiKey) {
+        console.error("[DEBUG] API KEY ERROR: No API key found");
+        throw new Error('API key not found. Please enter your Anthropic API key in the settings.');
+      }
+
+      // Build this turn's user-message text (chart data + context + question).
+      // buildMessageContent reads only `data`; pass an empty object as the legacy payload arg.
+      const systemPrompt = data.systemPrompt || config.API.SYSTEM_PROMPT;
+      const messageMetrics = this.buildMessageContent({}, data);
+
+      // Prior conversation turns keep context across questions. History entries are
+      // { role, content } string pairs — valid for both Anthropic and OpenAI formats.
+      const priorTurns = data.history || [];
+      const thisTurn = { role: "user", content: messageMetrics.builtText };
+
+      let payload;
+      if (local) {
+        // OpenAI chat-completions shape (Ollama /v1/chat/completions): system is the
+        // first message, not a top-level field.
+        payload = {
+          model: this.localTag(),
+          max_tokens: config.API.MAX_TOKENS,
+          stream: !!stream,
+          messages: [{ role: "system", content: systemPrompt }].concat(priorTurns).concat([thisTurn])
+        };
+      } else {
+        // Anthropic Messages shape: system is a top-level field.
+        payload = {
+          model: config.API.MODEL,
+          max_tokens: config.API.MAX_TOKENS,
+          system: systemPrompt,
+          messages: priorTurns.concat([thisTurn])
+        };
+        if (stream) payload.stream = true;
+      }
+
+      const payloadString = JSON.stringify(payload);
+      console.log("[DEBUG] Payload size:", payloadString.length, "bytes");
+      if (payloadString.length > 1000000) {
+        console.warn("[DEBUG] WARNING: Very large payload size:", payloadString.length, "bytes");
+      }
+
+      return {
+        local: local,
+        payload: payload,
+        payloadString: payloadString,
+        transport: this.buildTransport(apiKey),
+        metrics: messageMetrics
+      };
+    },
+
+    /**
      * Send data to Anthropic API via proxy
      * @param {string} appId - The Qlik app ID
      * @param {object} data - The data to send to Anthropic
@@ -60,63 +150,19 @@ define(['jquery', './security', './config', './data-format'], function($, securi
      */
     sendToAnthropic: function(appId, data, successCallback, errorCallback) {
       console.log("[DEBUG] Anthropic API called with appId:", appId);
-    
+
       try {
-        const local = this.isLocalModel();
-
-        // Get the API key (shared across all apps). The local (Ollama) backend needs none.
-        const apiKey = security.getAPIKey();
-
-        if (!local && !apiKey) {
-          console.error("[DEBUG] API KEY ERROR: No API key found");
-          errorCallback('API key not found. Please enter your Anthropic API key in the settings.');
+        let req;
+        try {
+          req = this.prepareRequest(data, false);
+        } catch (keyErr) {
+          errorCallback(keyErr.message);
           return;
         }
-
-        // Build this turn's user-message text (chart data + context + question).
-        // buildMessageContent reads only `data`; pass an empty object as the legacy payload arg.
-        console.log("[DEBUG] Preparing payload");
-        const systemPrompt = data.systemPrompt || config.API.SYSTEM_PROMPT;
-        const messageMetrics = this.buildMessageContent({}, data);
-        console.log("[DEBUG] Using system prompt:", systemPrompt.substring(0, 50) + "...");
-
-        // Prior conversation turns keep context across questions. History entries are
-        // { role, content } string pairs — valid for both Anthropic and OpenAI formats.
-        const priorTurns = data.history || [];
-        const thisTurn = { role: "user", content: messageMetrics.builtText };
-
-        let payload;
-        if (local) {
-          // OpenAI chat-completions shape (Ollama /v1/chat/completions): system is the
-          // first message, not a top-level field.
-          payload = {
-            model: config.API.LOCAL.MODEL_TAG,
-            max_tokens: config.API.MAX_TOKENS,
-            stream: false,
-            messages: [{ role: "system", content: systemPrompt }].concat(priorTurns).concat([thisTurn])
-          };
-        } else {
-          // Anthropic Messages shape: system is a top-level field.
-          payload = {
-            model: config.API.MODEL,
-            max_tokens: config.API.MAX_TOKENS,
-            system: systemPrompt,
-            messages: priorTurns.concat([thisTurn])
-          };
-        }
-    
-        // Check payload size
-        const payloadString = JSON.stringify(payload);
-        const payloadSize = payloadString.length;
-        console.log("[DEBUG] Payload size:", payloadSize, "bytes");
-    
-        // Warn if payload is large
-        if (payloadSize > 1000000) {
-          console.warn("[DEBUG] WARNING: Very large payload size:", payloadSize, "bytes");
-        }
-    
-        // Resolve URL + headers (direct browser call, or proxy if configured)
-        const transport = this.buildTransport(apiKey);
+        const local = req.local;
+        const messageMetrics = req.metrics;
+        const payloadString = req.payloadString;
+        const transport = req.transport;
         console.log("[DEBUG] Sending request to:", transport.url);
 
         // Make the API call
@@ -148,6 +194,152 @@ define(['jquery', './security', './config', './data-format'], function($, securi
           message: "Exception occurred: " + e.message
         });
       }
+    },
+
+    /**
+     * True when incremental (streamed) responses are both enabled and possible.
+     * Needs fetch + ReadableStream, which every browser QSEoW supports has.
+     */
+    canStream: function() {
+      return !!(config.CHAT && config.CHAT.STREAM) &&
+        typeof window.fetch === 'function' &&
+        typeof window.TextDecoder === 'function' &&
+        typeof window.AbortController === 'function';
+    },
+
+    /**
+     * Pull one text delta out of a decoded SSE `data:` payload. The two backends
+     * use different envelopes:
+     *   - Ollama / OpenAI: { choices: [ { delta: { content: "…" } } ] }
+     *   - Anthropic:       { type: "content_block_delta", delta: { text: "…" } }
+     * Unknown/keep-alive frames yield '' so the caller can ignore them.
+     * @returns {string}
+     */
+    extractDelta: function(obj, local) {
+      if (!obj || typeof obj !== 'object') return '';
+      if (local) {
+        var ch = obj.choices && obj.choices[0];
+        return (ch && ch.delta && ch.delta.content) || '';
+      }
+      if (obj.type === 'content_block_delta') {
+        return (obj.delta && (obj.delta.text || obj.delta.partial_json)) || '';
+      }
+      return '';
+    },
+
+    /**
+     * Stream a response, invoking onDelta(textChunk, fullTextSoFar) as tokens
+     * arrive and onDone(fullText, metrics) at the end.
+     *
+     * Deliberately returns PLAIN TEXT per chunk: the caller renders markdown once
+     * at the end. Re-parsing markdown (and re-sanitizing) on every token is what
+     * makes streamed chat UIs flicker and crawl, and half-parsed markdown renders
+     * as visible garbage mid-stream.
+     *
+     * @returns {{abort: function}} handle so the caller can drop an in-flight
+     *          stream (new chat, model switch) instead of leaking it.
+     */
+    streamToAnthropic: function(appId, data, onDelta, onDone, errorCallback) {
+      var self = this;
+      var controller = new AbortController();
+      var aborted = false;
+      var handle = {
+        abort: function() { aborted = true; try { controller.abort(); } catch (e) {} }
+      };
+
+      var req;
+      try {
+        req = this.prepareRequest(data, true);
+      } catch (keyErr) {
+        errorCallback(keyErr.message);
+        return handle;
+      }
+
+      var headers = Object.assign({}, req.transport.headers, { 'Accept': 'text/event-stream' });
+      console.log("[DEBUG] Streaming request to:", req.transport.url);
+
+      // Client-side deadline. fetch has no timeout option, so arm one manually and
+      // clear it on completion.
+      var timeoutMs = req.local ? config.API.LOCAL.TIMEOUT : config.API.TIMEOUT;
+      var timer = setTimeout(function() {
+        if (!aborted) { aborted = true; try { controller.abort(); } catch (e) {}
+          errorCallback({ message: 'The model did not respond in time.', status: 'timeout',
+            details: 'No response details' });
+        }
+      }, timeoutMs);
+
+      fetch(req.transport.url, {
+        method: 'POST',
+        headers: headers,
+        body: req.payloadString,
+        signal: controller.signal
+      }).then(function(res) {
+        if (!res.ok) {
+          return res.text().then(function(body) {
+            throw { message: 'Error communicating with Anthropic API: ' + res.status + ' ' +
+              res.statusText, status: res.status, details: body || 'No response details' };
+          });
+        }
+        // A backend (or proxy) that ignored `stream` sends one JSON body. Fall
+        // back to rendering it whole rather than showing nothing.
+        var ctype = (res.headers.get('content-type') || '').toLowerCase();
+        if (ctype.indexOf('event-stream') === -1 && ctype.indexOf('json') !== -1) {
+          return res.json().then(function(json) {
+            var text = self.formatResponse(json);
+            onDelta(text, text);
+            return text;
+          });
+        }
+        if (!res.body || !res.body.getReader) {
+          return res.text().then(function(t) { onDelta(t, t); return t; });
+        }
+
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder('utf-8');
+        var buffer = '';   // holds a partial SSE frame across chunk boundaries
+        var full = '';
+
+        function pump() {
+          return reader.read().then(function(result) {
+            if (result.done) return full;
+            buffer += decoder.decode(result.value, { stream: true });
+
+            // SSE frames are separated by a blank line; process only whole ones
+            // and keep the remainder for the next chunk.
+            var frames = buffer.split(/\r?\n\r?\n/);
+            buffer = frames.pop();
+
+            frames.forEach(function(frame) {
+              frame.split(/\r?\n/).forEach(function(line) {
+                if (line.indexOf('data:') !== 0) return;   // skip `event:`/comments
+                var payload = line.slice(5).trim();
+                if (!payload || payload === '[DONE]') return;
+                var obj;
+                try { obj = JSON.parse(payload); } catch (e) { return; }
+                var delta = self.extractDelta(obj, req.local);
+                if (delta) { full += delta; onDelta(delta, full); }
+              });
+            });
+            return pump();
+          });
+        }
+        return pump();
+      }).then(function(full) {
+        clearTimeout(timer);
+        if (aborted) return;
+        onDone(full || '', req.metrics);
+      }).catch(function(err) {
+        clearTimeout(timer);
+        if (aborted) return;   // user navigated away / switched model — not an error
+        console.error("[DEBUG] ERROR: streaming request failed:", err);
+        errorCallback(err && err.message ? err : {
+          message: 'Error communicating with Anthropic API: ' + err,
+          status: 'error',
+          details: 'No response details'
+        });
+      });
+
+      return handle;
     },
     
     /**
@@ -517,7 +709,7 @@ define(['jquery', './security', './config', './data-format'], function($, securi
 
       // OpenAI shape for the local backend (system as first message); Anthropic shape otherwise.
       const testPayload = local ? {
-        model: config.API.LOCAL.MODEL_TAG,
+        model: this.localTag(),
         max_tokens: 100,
         stream: false,
         messages: [

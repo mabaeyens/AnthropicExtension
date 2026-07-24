@@ -6,6 +6,66 @@ All notable changes to this extension are documented here.
 > hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
 > and in direct mode the key is sent from the browser to `api.anthropic.com`.
 
+## [0.4.0] - 2026-07-24
+
+### Added
+- **In-panel model picker.** A **Pick model** button sits to the right of *Submit* and
+  *Suggest a chart*. It opens a drop-up listing every model in the registry, with the active one
+  ticked. Choosing a different model asks *"This will clear your current conversation! Change
+  model?"* with a **Change model** / **Cancel** pair — conversation history can't meaningfully
+  cross models, so the thread is reset on switch. (With an empty thread the prompt is just
+  *"Switch to …?"*.)
+- **Active model is always visible.** A *"Talking to \<model\>"* line sits under the submit row,
+  and every answer's footer shows *"You are talking to \<model\>"* next to **LLM Token Usage**.
+  The footer credits the model that was active **when the request was sent**, not when it
+  returned, so switching mid-flight can't mislabel an answer.
+- **Streamed answers.** Responses render token-by-token as they are generated, with a blinking
+  caret, instead of appearing all at once after a wait. Toggle it under **Advanced Options →
+  "Stream the answer as it is generated"**; it falls back to a buffered request automatically when
+  the browser lacks `fetch`/`ReadableStream`/`AbortController`, or when the backend answers with
+  plain JSON because it ignored `stream`.
+  - Streaming chunks are inserted as **plain text** (`textContent`), and the markdown is rendered
+    and sanitized **once, at the end**. Re-parsing markdown per token is what makes streamed chat
+    UIs flicker and crawl, and half-written markdown renders as visible noise. It also means no
+    HTML is ever built from partial model output.
+  - An in-flight stream is aborted (`AbortController`) when you start a new chat or switch model,
+    so a dead stream can't keep writing into discarded DOM — and the proxy destroys the upstream
+    request when the browser disconnects, so Ollama stops generating for nobody.
+  - **Requires a proxy update**: `cm-llm-proxy` buffered every response, which defeats streaming.
+    Both `/api/ollama` and `/api/anthropic` now pipe the upstream body through untouched when
+    `stream: true` is requested. Verified end-to-end: 178 SSE frames, first at 577 ms of a 9.9 s
+    total.
+- **Ministral 3 3B** as a second local model — roughly half the memory of the 8B at comparable
+  speed. Uses the derived tag `ministral-3b-demo` (`FROM ministral-3:3b` + `PARAMETER num_ctx
+  8192`); Ollama's 64k default context inflates the KV cache to ~10 GB and pushes the model almost
+  entirely onto the CPU.
+
+### Changed
+- `API.MODELS` is now a **registry** of `{ id, label, hint, local, tag }` objects rather than bare
+  id strings. It drives both the properties-panel dropdown and the in-panel picker, so the two can
+  no longer drift apart, and each local model carries its own Ollama tag.
+- The properties-panel **Model** dropdown is now the *default* model only. Once the picker is used,
+  `API.MODEL_LOCKED` stops `paint()` from re-applying the property — `paint()` runs on every
+  selection event and would otherwise silently revert the model mid-conversation.
+- `isLocalModel()` resolves via the registry's `local` flag instead of comparing against a single
+  hard-coded id, and the Ollama model name comes from the selected entry's `tag`.
+- **"Suggest a chart" now tolerates off-schema JSON from smaller models.** Ministral 3 3B returns
+  blocks with `//` comments, backtick-quoted fields, bare `Sum([Field])` values, extra keys, and
+  measures as `{ name, expression, … }` objects — none of which is valid JSON, so a strict
+  `JSON.parse` discarded an otherwise usable suggestion with "Could not parse a chart
+  specification from the response." Parsing is now three escalating passes: strict parse → repair
+  (strip comments/trailing commas/backticks) → regex salvage of type/title/dimensions/measures.
+  Dimension and measure entries are coerced to strings, preferring an `expression` field over a
+  `name`. The prompt also now states the output rules explicitly (plain strings, four keys only,
+  no comments).
+- **Properties panel labels no longer truncate.** The sidebar is narrow and clips labels with an
+  ellipsis rather than wrapping them, so every label is now short ("API key", "Default model",
+  "Proxy URL", "Local model URL") and the explanation moved to a wrapping help line under each
+  field.
+- The **"No API key stored"** notice is hidden while a local model is selected — those need no key,
+  so the warning was pure noise. Switching back to a Claude model in the picker brings it straight
+  back if no key is stored.
+
 ## [0.3.5] - 2026-07-24
 
 ### Fixed

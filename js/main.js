@@ -35,38 +35,57 @@ define([
               type: "items",
               label: "Anthropic AI Settings",
               items: {
+                // The properties sidebar is narrow and truncates labels with an
+                // ellipsis — it never wraps them. So every label stays short and
+                // the explanation goes in a `text` component below the field,
+                // which does wrap.
                 apiKey: {
                   ref: "props.apiKey",
-                  label: "API Key (leave blank to remove the stored key)",
+                  label: "API key",
                   type: "string",
                   expression: "optional"
                 },
+                apiKeyHelp: {
+                  component: "text",
+                  label: "Stored encrypted in this browser. Leave blank to remove the stored key. Not needed for local models."
+                },
                 model: {
                   ref: "props.model",
-                  label: "Model",
+                  label: "Default model",
                   type: "string",
                   component: "dropdown",
-                  options: [
-                    { value: "claude-haiku-4-5", label: "Haiku 4.5 (fast, low cost)" },
-                    { value: "claude-sonnet-4-6", label: "Sonnet 4.6 (balanced)" },
-                    { value: "claude-opus-4-8", label: "Opus 4.8 (most capable)" },
-                    { value: "ministral-local", label: "Ministral 3 8B (local, via Ollama)" }
-                  ],
+                  // Built from the model registry so the panel picker and this
+                  // dropdown can never drift apart.
+                  options: config.API.MODELS.map(function (m) {
+                    return { value: m.id, label: m.label + (m.hint ? ' (' + m.hint + ')' : '') };
+                  }),
                   defaultValue: config.API.MODEL
+                },
+                modelHelp: {
+                  component: "text",
+                  label: "The model each session starts with. Switch models any time with “Pick model” in the chat panel."
                 },
                 proxyUrl: {
                   ref: "props.proxyUrl",
-                  label: "Proxy URL (optional — leave blank to call the API directly)",
+                  label: "Proxy URL",
                   type: "string",
                   expression: "optional",
                   defaultValue: ""
                 },
+                proxyUrlHelp: {
+                  component: "text",
+                  label: "Optional. Leave blank to call the Anthropic API directly from the browser."
+                },
                 localUrl: {
                   ref: "props.localUrl",
-                  label: "Local model URL (Ollama via HTTPS proxy — used when Model is Ministral)",
+                  label: "Local model URL",
                   type: "string",
                   expression: "optional",
                   defaultValue: ""
+                },
+                localUrlHelp: {
+                  component: "text",
+                  label: "Ollama endpoint, used when a local model is selected. Must be HTTPS on QSEoW — e.g. https://localhost:3000/api/ollama."
                 },
                 versionInfo: {
                   component: "text",
@@ -82,8 +101,13 @@ define([
       // Apply per-instance config overrides from the properties panel. Cheap, so it
       // runs on every paint to pick up property changes (model / proxy URL).
       if (layout.props) {
-        if (layout.props.model) {
+        // The properties dropdown only seeds the model. Once the user picks one in
+        // the chat panel, MODEL_LOCKED is set and we stop clobbering their choice —
+        // paint() runs on every selection event, which would otherwise silently
+        // revert the model mid-conversation.
+        if (layout.props.model && !config.API.MODEL_LOCKED) {
           config.API.MODEL = layout.props.model;
+          uiController.renderModelPicker();
         }
         config.API.PROXY_URL = layout.props.proxyUrl || '';
 

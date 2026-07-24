@@ -834,3 +834,185 @@ code {
   margin: 3px 0;
   font-family: monospace;
 }
+
+/* ── Model picker (chat panel) ─────────────────────────────────────────────
+   Sits to the right of Submit / Suggest a chart. The menu opens upward
+   (drop-up) because the submit row sits low in a scrolling panel. */
+.model-picker {
+  position: relative;
+  margin-left: auto;   /* push to the right edge of .submit-area */
+}
+
+.model-picker-button {
+  padding: 2px 8px;
+  background-color: #fff;
+  color: #444;
+  border: 1px solid #cfd2d6;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.model-picker-button:hover,
+.model-picker-button.is-open {
+  border-color: #009845;
+  color: #009845;
+}
+
+.model-caret {
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+.model-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 20;
+  min-width: 230px;
+  background: #fff;
+  border: 1px solid #cfd2d6;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+}
+
+.model-menu-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #888;
+  padding: 4px 8px 6px;
+}
+
+.model-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+
+.model-menu-item:hover {
+  background: #f2f7f4;
+}
+
+.model-menu-item.is-active {
+  background: #eef6f1;
+  font-weight: 600;
+}
+
+.model-menu-name {
+  display: block;
+}
+
+.model-menu-hint {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: #888;
+}
+
+.model-menu-check {
+  float: right;
+  color: #009845;
+}
+
+/* Confirmation step — replaces the list inside the same menu */
+.model-confirm {
+  padding: 8px;
+  max-width: 240px;
+}
+
+.model-confirm-msg {
+  font-size: 13px;
+  color: #b8860b;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.model-confirm-target {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.model-confirm-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.model-confirm-yes {
+  padding: 3px 10px;
+  background: #009845;
+  color: #fff;
+  border: 1px solid #009845;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.model-confirm-no {
+  padding: 3px 10px;
+  background: #fff;
+  color: #666;
+  border: 1px solid #cfd2d6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* "Talking to <model>" line under the submit row */
+.active-model-line {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #777;
+}
+
+/* Per-response credit, on the same row as the token-usage summary */
+.token-usage-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.token-usage-info details {
+  flex: 1 1 auto;
+}
+
+.answered-by {
+  font-size: 11px;
+  color: #777;
+  white-space: nowrap;
+}
+
+/* ── Streamed answer ───────────────────────────────────────────────────────
+   Raw model text lands here verbatim while tokens arrive (pre-wrap keeps the
+   newlines); the markdown render replaces this node once the stream ends. */
+.chat-stream {
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: inline;
+}
+
+.chat-cursor {
+  display: inline-block;
+  margin-left: 1px;
+  color: #009845;
+  animation: anthropic-blink 1s steps(2, start) infinite;
+}
+
+@keyframes anthropic-blink {
+  to { visibility: hidden; }
+}
+
+/* Respect users who ask for reduced motion — no blinking caret. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-cursor { animation: none; }
+}

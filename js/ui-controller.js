@@ -18,6 +18,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
     let contextSent = false;
     let lastChartSignature = null;
 
+    // Handle for an in-flight streamed answer ({ abort }). Aborted when the user
+    // starts a new chat or switches model, so a dead stream can't keep writing
+    // into DOM that has been thrown away.
+    let activeStream = null;
+
     // The wrapper for the exchange currently being rendered. Each turn (user
     // bubble + its assistant reply) is grouped in a .chat-turn that is prepended,
     // so the newest exchange sits at the top of the thread.
@@ -292,6 +297,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         // API key status area (no input/clear button — key is managed via the
         // properties panel only). renderApiKeyStatus also runs from paint().
         this.renderApiKeyStatus();
+        this.renderModelPicker();
 
         if (config.DEBUG_MODE && config.FEATURES && config.FEATURES.SHOW_DEBUG_AREA) {
           $container.find('#debug-area').show();
@@ -357,7 +363,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         var $area = $container.find('#api-key-status-area');
         if (!$area.length) return;
 
-        if (security.getAPIKey()) {
+        // Local (Ollama) models need no key, so the notice would be noise. It
+        // reappears the moment the picker switches back to a hosted model.
+        if (anthropicAPI.isLocalModel() || security.getAPIKey()) {
           // Key is managed authoritatively in Edit object → Settings; nothing to
           // show in the panel when one is stored.
           $area.empty();
@@ -370,8 +378,109 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         }
       },
 
+      // ── Model picker ─────────────────────────────────────────────────────────
+      // The active model lives in config.API.MODEL. The picker owns it for the
+      // rest of the session once used (config.API.MODEL_LOCKED), so a repaint
+      // can't revert it. Safe to call from paint() — no-ops before init.
+
+      /** Repaint the picker button, the "talking to" line, and the menu items. */
+      renderModelPicker: function() {
+        if (!$container) return;
+        var activeId = config.API.MODEL;
+        var label = anthropicAPI.getModelLabel(activeId);
+
+        $container.find('#anthropic-active-model')
+          .html('Talking to <strong>' + escapeHtml(label) + '</strong>');
+
+        var $menu = $container.find('#anthropic-model-menu');
+        if (!$menu.length) return;
+        var html = '<div class="model-menu-title">Choose a model</div>';
+        (config.API.MODELS || []).forEach(function(m) {
+          html += '<button type="button" class="model-menu-item' +
+            (m.id === activeId ? ' is-active' : '') + '" data-model="' + escapeHtml(m.id) + '">' +
+            '<span class="model-menu-name">' + escapeHtml(m.label) + '</span>' +
+            (m.hint ? '<span class="model-menu-hint">' + escapeHtml(m.hint) + '</span>' : '') +
+            (m.id === activeId ? '<span class="model-menu-check">&#10003;</span>' : '') +
+            '</button>';
+        });
+        $menu.html(html);
+      },
+
+      /** Replace the menu body with the change-model confirmation step. */
+      renderModelConfirm: function(modelId) {
+        var $menu = $container.find('#anthropic-model-menu');
+        var label = anthropicAPI.getModelLabel(modelId);
+        // Only the "clears your conversation" wording when there IS one to clear.
+        var msg = conversation.length
+          ? 'This will clear your current conversation! Change model?'
+          : 'Switch to ' + label + '?';
+        $menu.html(
+          '<div class="model-confirm">' +
+          '<div class="model-confirm-msg">' + escapeHtml(msg) + '</div>' +
+          '<div class="model-confirm-target">' + escapeHtml(label) + '</div>' +
+          '<div class="model-confirm-actions">' +
+          '<button type="button" class="lui-button model-confirm-yes" data-model="' +
+          escapeHtml(modelId) + '">Change model</button>' +
+          '<button type="button" class="model-confirm-no">Cancel</button>' +
+          '</div></div>');
+      },
+
+      /** Commit a model change: clears the thread, since history can't cross models. */
+      applyModelChange: function(modelId) {
+        config.API.MODEL = modelId;
+        config.API.MODEL_LOCKED = true;
+        this.startNewChat();
+        this.renderModelPicker();
+        // Switching to/from a local model changes whether a key is needed.
+        this.renderApiKeyStatus();
+        this.closeModelMenu();
+        this.appendSystemNote(formatting.formatWarningMessage(
+          'Model changed to ' + anthropicAPI.getModelLabel(modelId) + '. Conversation cleared.'));
+      },
+
+      closeModelMenu: function() {
+        if (!$container) return;
+        $container.find('#anthropic-model-menu').hide();
+        $container.find('#anthropic-model-button').removeClass('is-open');
+      },
+
       setupEventHandlers: function() {
         var self = this;
+
+        // Model picker: open/close, pick → confirm → apply.
+        $container.find('#anthropic-model-button').on('click', function(e) {
+          e.stopPropagation();
+          var $menu = $container.find('#anthropic-model-menu');
+          if ($menu.is(':visible')) {
+            self.closeModelMenu();
+          } else {
+            self.renderModelPicker();   // rebuild so it can't show a stale choice
+            $menu.show();
+            $(this).addClass('is-open');
+          }
+        });
+
+        $container.find('#anthropic-model-menu').on('click', function(e) {
+          e.stopPropagation();   // keep the outside-click handler from closing it
+        });
+
+        $container.find('#anthropic-model-menu').on('click', '.model-menu-item', function() {
+          var id = $(this).data('model');
+          if (id === config.API.MODEL) { self.closeModelMenu(); return; }
+          self.renderModelConfirm(id);
+        });
+
+        $container.find('#anthropic-model-menu').on('click', '.model-confirm-yes', function() {
+          self.applyModelChange($(this).data('model'));
+        });
+
+        $container.find('#anthropic-model-menu').on('click', '.model-confirm-no', function() {
+          self.renderModelPicker();
+          self.closeModelMenu();
+        });
+
+        // Click anywhere else closes the menu.
+        $(document).on('click.anthropicModel', function() { self.closeModelMenu(); });
 
         // "Add Chart" button
         $container.find('#select-chart-button').on('click', function() {
@@ -571,23 +680,60 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
 
       processAnthropicRequest: function(appId, requestData, $thinking, chartSig) {
         var self = this;
+        // Pin the model at send time so the footer credits whoever actually answered.
+        var modelAtSend = config.API.MODEL;
+
+        // Shared completion path for both transports: render the markdown once,
+        // attach footers, and persist the turn.
+        function finish(responseText, metrics) {
+          var html = formatting.formatResponseText(responseText);
+          html += self.renderCopyButton();
+          if (metrics) html += self.renderTokenUsage(metrics, responseText, modelAtSend);
+          self.replaceThinking($thinking, html);
+          // Stash the raw markdown so the Copy button copies source, not HTML.
+          if ($thinking && $thinking.length) $thinking.data('raw', responseText);
+
+          conversation.push({ role: 'user', content: metrics.builtText });
+          conversation.push({ role: 'assistant', content: responseText });
+          if (requestData.context) contextSent = true;
+          if (requestData.chartData) lastChartSignature = chartSig;
+        }
+
+        if (this.streamingEnabled() && anthropicAPI.canStream()) {
+          // Text lands in a pre-wrap node as it arrives; markdown is rendered ONCE
+          // at the end. Parsing/sanitizing markdown per token is what makes streamed
+          // UIs flicker, and half-written markdown renders as visible noise.
+          $thinking.removeClass('thinking').empty()
+            .append($('<div class="chat-stream"></div>'))
+            .append($('<span class="chat-cursor">▌</span>'));
+          var $stream = $thinking.find('.chat-stream');
+          var node = $stream[0];
+
+          activeStream = anthropicAPI.streamToAnthropic(
+            appId,
+            requestData,
+            function(chunk) {
+              // textContent += is cheap and escapes by construction — no HTML is
+              // built from partial model output.
+              node.textContent += chunk;
+            },
+            function(fullText, metrics) {
+              activeStream = null;
+              finish(fullText, metrics);
+            },
+            function(error) {
+              activeStream = null;
+              self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+            }
+          );
+          return;
+        }
+
         anthropicAPI.sendToAnthropic(
           appId,
           requestData,
           function(response, metrics) {
-            var responseText = anthropicAPI.formatResponse(response);
-            var html = formatting.formatResponseText(responseText);
-            html += self.renderCopyButton();
-            if (metrics) html += self.renderTokenUsage(metrics, responseText);
-            self.replaceThinking($thinking, html);
-            // Stash the raw markdown so the Copy button copies source, not HTML.
-            if ($thinking && $thinking.length) $thinking.data('raw', responseText);
-
-            // Persist this turn so follow-up questions retain context.
-            conversation.push({ role: 'user', content: metrics.builtText });
-            conversation.push({ role: 'assistant', content: responseText });
-            if (requestData.context) contextSent = true;
-            if (requestData.chartData) lastChartSignature = chartSig;
+            finish(anthropicAPI.formatResponse(response), metrics);
           },
           function(error) {
             self.replaceThinking($thinking, formatting.formatErrorMessage(error));
@@ -600,6 +746,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
       // Falls back to normal markdown when no valid spec is returned.
       processChartSuggestion: function(appId, requestData, $thinking, chartSig) {
         var self = this;
+        var modelAtSend = config.API.MODEL;
         anthropicAPI.sendToAnthropic(
           appId,
           requestData,
@@ -627,6 +774,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
               self.appendSystemNote(formatting.formatErrorMessage(
                 'Could not parse a chart specification from the response.'));
             }
+            // Credit the model on both paths (chart preview and text fallback).
+            if (metrics) $thinking.append(self.renderTokenUsage(metrics, responseText, modelAtSend));
 
             // Persist the turn so follow-ups keep context.
             conversation.push({ role: 'user', content: metrics.builtText });
@@ -746,6 +895,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
       },
 
       startNewChat: function() {
+        // Drop any in-flight stream first — its DOM target is about to vanish.
+        if (activeStream) { activeStream.abort(); activeStream = null; }
         conversation = [];
         contextSent = false;
         lastChartSignature = null;
@@ -756,7 +907,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         $container.find('#anthropic-conversation').empty();
       },
 
-      renderTokenUsage: function(metrics, responseText) {
+      // `modelId` is captured when the request is SENT, not when it returns — the
+      // user may have switched models while the answer was in flight.
+      renderTokenUsage: function(metrics, responseText, modelId) {
         return '<div class="token-usage-info">' +
           '<details>' +
           '<summary>LLM Token Usage</summary>' +
@@ -768,7 +921,19 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
               (metrics.dataSampled ? 'sampled data, ' : '') +
               (metrics.actualRows || metrics.rowCount) + ' rows from ' + metrics.rowCount + ' total)</p>'
             : '') +
-          '</div></details></div>';
+          '</div></details>' +
+          '<div class="answered-by">You are talking to <strong>' +
+          escapeHtml(anthropicAPI.getModelLabel(modelId || config.API.MODEL)) +
+          '</strong></div>' +
+          '</div>';
+      },
+
+      // Advanced Options → "Stream the answer as it is generated". Falls back to
+      // the config default before the widget exists.
+      streamingEnabled: function() {
+        if (!$container) return !!(config.CHAT && config.CHAT.STREAM);
+        var $cb = $container.find('#stream-response');
+        return $cb.length ? $cb.is(':checked') : !!(config.CHAT && config.CHAT.STREAM);
       },
 
       getOptimizationSettings: function() {
