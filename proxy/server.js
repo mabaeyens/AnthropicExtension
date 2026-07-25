@@ -19,8 +19,37 @@ const { corsOptions } = require('./lib/cors');
 const { securityHeaders } = require('./lib/security-headers');
 const { createRateLimiter } = require('./lib/rate-limit');
 const { installGracefulShutdown } = require('./lib/shutdown');
+const config = require('./lib/config');
+const { createLogger, createRotatingSink } = require('./lib/logger');
+const { createAudit } = require('./lib/audit');
+const { createMetrics } = require('./lib/metrics');
+const { requestId } = require('./middleware/request-id');
+const { requestLog } = require('./middleware/request-log');
+const { createHealthRouter } = require('./routes/health');
 
 function readFileMaybe(p) { return p ? fs.readFileSync(p) : undefined; }
+
+// A sink that writes JSON lines to a rotating file when LOG_DIR is set, else stdout.
+function makeSink(fileName) {
+  if (!process.env.LOG_DIR) return undefined; // logger default → stdout
+  return createRotatingSink({
+    filePath: `${process.env.LOG_DIR}/${fileName}`,
+    maxBytes: Number(process.env.LOG_MAX_BYTES) || 10 * 1024 * 1024,
+    maxFiles: Number(process.env.LOG_MAX_FILES) || 5,
+  });
+}
+
+// ── Boot config validation (P06 §4.4) ───────────────────────────────────────
+// Aggregate ALL required-env checks up front so a misconfigured deploy fails fast
+// with a precise, complete message (which vars, what's wrong) — before any cert read
+// or network setup, and before the per-loader checks below.
+try {
+  const { summary } = config.load(process.env);
+  console.log('[boot] configuration validated', JSON.stringify(summary));
+} catch (err) {
+  console.error('[FATAL]', err.message);
+  process.exit(1);
+}
 
 // ── Boot-time credential validation (P01 §2) ────────────────────────────────
 // Validate config BEFORE touching the filesystem/network, so a missing key fails
@@ -59,6 +88,12 @@ const port = process.env.PORT || 3000;
 const ALLOWLIST = modelAllowlist();
 const MAX_TOKENS_CAP = Number(process.env.MAX_TOKENS_CAP) || 8192;
 
+// Observability (P06): structured app logger, a SEPARATE audit stream, and counters.
+// Both logs rotate when LOG_DIR is configured, else go to stdout for a log shipper.
+const logger = createLogger({ sink: makeSink('app.log') });
+const audit = createAudit({ sink: makeSink('audit.log') });
+const metrics = createMetrics();
+
 // Concurrency admission control (P03 / X02). Limits are config-driven with the
 // documented defaults.
 const limiter = createLimiter({
@@ -68,10 +103,9 @@ const limiter = createLimiter({
   queueTimeoutMs: Number(process.env.QUEUE_TIMEOUT_MS) || 10000,
 });
 
-// Readiness flag flipped by graceful shutdown; the P06 /ready endpoint will read it.
+// Readiness flag flipped by graceful shutdown; the P06 /ready endpoint reads it.
 let ready = true;
 const setReady = (v) => { ready = v; };
-// eslint-disable-next-line no-unused-vars
 function isReady() { return ready; }
 
 // TLS options (P05 §4.1): cert/key from config (production = CA-signed cert for the
@@ -86,7 +120,11 @@ const options = {
 // Don't advertise the framework (P05 §4.5).
 app.disable('x-powered-by');
 
-// Security response headers on every response — buffered and streamed (P05 §4.3).
+// Request id first (P06 §4.2) so even a rate-limited/denied request is traceable, then
+// the per-request structured log (fires on completion). Security headers on every
+// response — buffered and streamed (P05 §4.3).
+app.use(requestId());
+app.use(requestLog({ logger, metrics }));
 app.use(securityHeaders());
 
 // IP-based rate limiting as a coarse backstop BEFORE auth, so an unauthenticated flood
@@ -108,23 +146,23 @@ app.use(express.json({ limit: process.env.BODY_LIMIT || '1mb' }));
 // generic message + request id — never an echo of the offending body.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  const requestId = crypto.randomUUID();
+  const requestId = req.requestId || crypto.randomUUID();
   if (err.type === 'entity.too.large') {
-    console.warn('rejected oversize body', { requestId, limit: err.limit });
+    logger.warn({ event: 'body_too_large', requestId, limit: err.limit });
     return res.status(413).json({ error: 'Request body too large', requestId });
   }
   if (err.type === 'entity.parse.failed') {
-    console.warn('rejected malformed JSON body', { requestId });
+    logger.warn({ event: 'body_parse_failed', requestId });
     return res.status(400).json({ error: 'Malformed JSON body', requestId });
   }
-  console.error('unhandled request error', { requestId, message: err.message });
+  logger.error({ event: 'unhandled_error', requestId, message: err.message });
   return res.status(500).json({ error: 'Internal error', requestId });
 });
 
-// Health check endpoint (open — no auth, no upstream)
-app.get('/health', (req, res) => {
-  res.status(200).send('Proxy server is running');
-});
+// Health / readiness / metrics (P06 §4.3, §4.6) — open, no auth, no upstream.
+// /health = liveness (service-manager restart), /ready = accepting requests (flips
+// during drain), /metrics = P03 gauges + P06 counters.
+app.use(createHealthRouter({ isReady, limiter, metrics }));
 
 // Validate the Qlik session for every /api/* request before any credential
 // injection or upstream call (P02). The validator was created + config-checked at boot.
@@ -138,6 +176,9 @@ app.use('/api', authenticate(validate));
 function makeHandler(providerName) {
   const provider = PROVIDERS[providerName];
   return async (req, res) => {
+    const requestId = req.requestId || crypto.randomUUID();
+    const model = req.body && req.body.model;
+    const route = `/api/${providerName}`;
     const wantsStream = req.body && req.body.stream === true;
     let response;
     try {
@@ -150,11 +191,10 @@ function makeHandler(providerName) {
         timeoutMs: provider.timeoutMs,
       });
     } catch (error) {
-      const requestId = crypto.randomUUID();
       const status = (error.response && error.response.status) || 502;
       // Log detail server-side (never the key/body); return a generic body to the client.
-      console.error(`[${provider.name}] upstream request failed`,
-        { requestId, status, message: error.message });
+      logger.error({ event: 'upstream_failed', provider: provider.name, requestId, status, message: error.message });
+      audit.record({ user: req.qlikUser, route, model, status, requestId });
       res.status(status).json({ error: 'Upstream request failed', provider: provider.name, requestId });
       return;
     }
@@ -170,16 +210,18 @@ function makeHandler(providerName) {
 
       req.on('close', () => response.data.destroy());
       response.data.on('error', (err) => {
-        console.error(`[${provider.name}] stream error:`, err.message);
+        logger.error({ event: 'stream_error', provider: provider.name, requestId, message: err.message });
         res.end();
       });
       // .pipe() natively honours backpressure — it pauses the upstream when res's write
       // buffer fills and resumes on 'drain' — so a slow client can't balloon proxy
       // memory (P03 §6).
       response.data.pipe(res);
+      audit.record({ user: req.qlikUser, route, model, status: 200, requestId });
       return;
     }
 
+    audit.record({ user: req.qlikUser, route, model, status: 200, requestId });
     res.json(response.data);
   };
 }
@@ -199,10 +241,7 @@ app.post('/api/ollama',
 // Start the server
 const server = https.createServer(options, app);
 server.listen(port, () => {
-  console.log(`Proxy server running at https://localhost:${port}`);
-  console.log(`Health check: https://localhost:${port}/health`);
-  console.log(`Anthropic endpoint: https://localhost:${port}/api/anthropic`);
-  console.log(`Local model endpoint: https://localhost:${port}/api/ollama`);
+  logger.info({ event: 'listening', port, endpoints: ['/health', '/ready', '/metrics', '/api/anthropic', '/api/ollama'] });
 });
 
 // Graceful shutdown (P03 §8): stop accepting, drain the queue, let in-flight finish.

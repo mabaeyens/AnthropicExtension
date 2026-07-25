@@ -98,11 +98,15 @@ npm start
 
 The server starts at `https://localhost:3000`. Available endpoints:
 
-- `GET  /health` — Check that the proxy is running
+- `GET  /health` — liveness (process is up); the service manager uses this to restart
+- `GET  /ready` — readiness (boot validation passed, accepting requests); flips to `503` during graceful drain
+- `GET  /metrics` — concurrency gauges (in-flight, queue depth) + counters (requests, 4xx/5xx, retries)
 - `POST /api/anthropic` — Forwards the request to `api.anthropic.com/v1/messages`
 - `POST /api/ollama` — Forwards an OpenAI-compatible chat body to the local Ollama server (`OLLAMA_URL`)
 
-The Anthropic API key is passed per request via the `x-api-key` header (managed by the Qlik extension).
+The Anthropic API key is held **server-side** (`ANTHROPIC_API_KEY`, never sent by the browser) and
+injected per request; any client-supplied key header is stripped. Callers are authenticated by their
+forwarded Qlik session (`x-qlik-session`).
 The `/api/ollama` route needs **no** API key; it requires a running local [Ollama](https://ollama.com)
 server (e.g. `ollama pull ministral-3:8b`). Local inference is slower than the hosted API, so this
 route uses a 5-minute timeout.
@@ -119,6 +123,30 @@ left generating for nobody. Non-streaming requests are unaffected.
 
 > Headers sent on streamed responses: `Cache-Control: no-cache, no-transform` and
 > `X-Accel-Buffering: no`, so anything sitting in front of the proxy doesn't re-buffer the stream.
+
+## Operations (Windows service)
+
+For production the proxy runs as an auto-start / auto-restart Windows service on the Qlik node
+rather than a hand-started `node server.js` (a reboot would otherwise leave it down). The service
+wrapper uses [`node-windows`](https://github.com/coreybutler/node-windows), installed separately so
+the runtime stays lean:
+
+```powershell
+npm install --no-save node-windows
+node service/install-service.js     # run as Administrator; registers + starts "cm-llm-proxy"
+node service/uninstall-service.js   # remove the service (standalone `node server.js` still works)
+```
+
+Run the service under a **least-privilege account** that can read the TLS and Qlik certificates.
+`Stop-Service cm-llm-proxy` triggers the graceful drain (in-flight requests finish within
+`DRAIN_TIMEOUT_MS`); `Start-Service` comes back ready once boot validation passes.
+
+**Logs.** With `LOG_DIR` set, the app log (`app.log`) and a separate audit log (`audit.log`) are
+written there as JSON lines with size-based rotation (`LOG_MAX_BYTES` × `LOG_MAX_FILES`); otherwise
+both go to stdout for a log shipper. Neither log ever contains secrets or request/response bodies —
+the app log carries request-id, user, route, status and latency; the audit log carries who-called-
+what-when (user, route, model, status). Boot fails fast with a precise message if any required
+variable is missing or a cert path is unreadable.
 
 ## Related repositories
 

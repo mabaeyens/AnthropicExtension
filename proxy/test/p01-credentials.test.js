@@ -128,7 +128,9 @@ test('server.js exits non-zero with a clear message when ANTHROPIC_API_KEY is un
     threw = true;
     assert.notEqual(e.status, 0);
     const out = String(e.stderr || '') + String(e.stdout || '');
-    assert.match(out, /ANTHROPIC_API_KEY is not set/);
+    // Boot config validation (P06) now fires first and aggregates the required-var
+    // checks; it still names ANTHROPIC_API_KEY, so the fail-fast contract holds.
+    assert.match(out, /ANTHROPIC_API_KEY/);
   }
   assert.ok(threw, 'expected the process to exit non-zero');
 });
