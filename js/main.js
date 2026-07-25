@@ -165,15 +165,17 @@ define([
 
       return qlik.Promise.resolve();
     },
-    // Teardown hook (E03): Qlik calls this when the object is removed from the sheet
-    // or the sheet is torn down. Release all global listeners, preview vizzes, session
-    // objects, and any in-flight request so nothing accumulates across sheet navigation.
-    // Idempotent (each step guards on presence), so a paint/destroy race can't throw.
-    destroy: function () {
-      try { uiController.teardown(); } catch (e) {
-        log.warn("[DEBUG] teardown error (ignored):", e && e.message);
-      }
-    },
+    // NOTE (regression fix): we deliberately do NOT wire a Qlik `destroy` hook to
+    // uiController.teardown(). The floating widget is a body-global SINGLETON that is
+    // meant to persist across sheet navigation (so you can move between sheets and select
+    // charts from any of them). Qlik fires `destroy` on every sheet change — tearing the
+    // widget + its capture-phase selection listener down there made the extension appear
+    // only on the first sheet and stop tracking selections elsewhere. The single-instance
+    // paint guard (`#anthropic-floating-widget`) already prevents duplicate widgets and
+    // duplicate listeners, and per-fetch engine session objects are created-read-destroyed
+    // inline, so nothing leaks across navigation without a teardown. `uiController.teardown()`
+    // / `dataCollector.teardown()` remain available for a genuine teardown (e.g. page unload
+    // or tests), just not on per-sheet destroy.
     controller: ['$scope', function ($scope) {
       // Controller logic here
       log.debug("AnthropicExtension controller initialized");

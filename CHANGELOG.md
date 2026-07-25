@@ -56,8 +56,12 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 - **Client request lifecycle (E02):** at most one in-flight request per widget — Submit/Suggest are
   disabled while busy, a unified abort handle covers both buffered and streamed paths, the app-context
   cache is race-safe, and a proxy `503` surfaces as a friendly "busy, try again" message.
-- **Extension teardown (E03):** a real teardown on Qlik `destroy` releases global listeners, preview
-  vizzes, engine session objects, and any in-flight request — no leaks across sheet navigation.
+- **Persistent floating widget.** The panel is a body-global singleton that persists across sheet
+  navigation, so you can move between sheets and select charts from any of them. A single-instance
+  guard prevents duplicate widgets/listeners, and per-fetch engine session objects are
+  created-read-destroyed inline, so nothing leaks. (`teardown()` helpers exist for a genuine teardown
+  — page unload / tests — but are deliberately **not** wired to Qlik's per-sheet `destroy`, which
+  would otherwise remove the widget every time you change sheets.)
 - **Dev tooling & tests (E06/P07):** dev-only `package.json` + ESLint + `node:test` suites (an AMD
   test harness for the pure modules; integration + load/drain harness for the proxy) and GitHub
   Actions CI, path-filtered per artefact. The shipped runtime stays plain AMD (no build step).

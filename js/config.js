@@ -22,7 +22,7 @@ define([], function() {
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
     VERSION: '0.5.0',
-    BUILD: 33,
+    BUILD: 34,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
