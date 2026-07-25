@@ -24,7 +24,7 @@ $version = $Tag -replace '^v', ''
 
 # 1. Tag must be new.
 $existing = git tag --list $Tag
-if ($existing) { $fail += "Tag '$Tag' already exists — releases are immutable; bump the patch version instead." }
+if ($existing) { $fail += "Tag '$Tag' already exists -- releases are immutable; bump the patch version instead." }
 
 # 2. Version single-sourcing: config.js VERSION == .qext version == tag.
 $configText = Get-Content (Join-Path $root 'js/config.js') -Raw
