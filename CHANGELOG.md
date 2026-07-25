@@ -45,6 +45,11 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 - **Concurrency & resilience (P03):** admission control with global + per-user in-flight ceilings, a
   bounded FIFO queue (`503` + `Retry-After` on overflow/timeout), streaming backpressure, upstream
   keep-alive pooling, and graceful drain on shutdown.
+- **Automated proxy setup.** `proxy/scripts/setup.ps1` (idempotent) does the mechanical
+  install steps on a Windows node — Node check, `npm ci`, optional self-signed dev cert +
+  trust, `.env` scaffolding from the template with the values you pass, and optional
+  Windows-service registration. Site secrets (API key, Qlik auth) are supplied by you, never
+  invented.
 - **Observability & service (P06):** structured JSON request logs, a separate audit log
   (who-asked-what-when, no bodies/secrets), `/health` · `/ready` · `/metrics`, boot-time config
   validation, and a Windows-service wrapper (auto-start/restart, log rotation).

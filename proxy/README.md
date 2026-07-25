@@ -25,13 +25,38 @@ call a plain-HTTP local Ollama server directly, so it goes through this HTTPS pr
 
 ## Setup
 
+### Automated (Windows / PowerShell) — recommended
+
+`scripts/setup.ps1` does the mechanical steps for you (idempotent): checks Node, runs
+`npm ci`, optionally generates + trusts a dev TLS cert, scaffolds `.env` from the template
+with the values you pass, and optionally registers the Windows service. You still supply
+the site secrets (API key, Qlik auth) — the script never invents them.
+
+```powershell
+# Local dev: deps + trusted self-signed cert + starter .env, then `npm start`.
+pwsh scripts/setup.ps1 -DevCert -TrustCert -ApiKey 'sk-ant-...' `
+  -QlikSessionUrl 'https://your-qlik:4243/qps/session' `
+  -QlikCert './certs/client.pem' -QlikKey './certs/client_key.pem' `
+  -Origins 'https://your-qlik' -LogLevel DEBUG
+
+# Production node: deps + .env + register the auto-start Windows service
+# (use a CA-signed cert: set TLS_CERT/TLS_KEY in .env — see "Production certificate").
+pwsh scripts/setup.ps1 -ApiKey 'sk-ant-...' -QlikSessionUrl '...' `
+  -QlikCert '...' -QlikKey '...' -Origins 'https://your-qlik' -LogLevel INFO -InstallService
+```
+
+Run `Get-Help scripts/setup.ps1 -Full` for every parameter.
+
+### Manual
+
 ```bash
 # 1. Copy and edit the environment file
 cp .env.example .env
-# Edit .env: set QLIK_ORIGIN to your Qlik Sense server URL
+# Edit .env: set the required vars (ANTHROPIC_API_KEY, QLIK_SESSION_URL, QLIK_CERT,
+# QLIK_KEY, QLIK_ORIGINS) and optionally LOG_LEVEL
 
 # 2. Install dependencies
-npm install
+npm ci
 ```
 
 ## Configuration
