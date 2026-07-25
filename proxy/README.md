@@ -40,9 +40,14 @@ All settings are configured via `.env` (copied from `.env.example`):
 
 | Variable | Description | Default |
 |---|---|---|
-| `QLIK_ORIGIN` | Qlik Sense server URL allowed by CORS | `https://your-qlik-server` |
+| `QLIK_ORIGINS` | Comma-separated CORS origin allowlist (exact match); `QLIK_ORIGIN` still accepted as a legacy fallback | `https://your-qlik-server` |
 | `PORT` | Proxy server port | `3000` |
 | `OLLAMA_URL` | Local Ollama OpenAI-compatible endpoint (for `/api/ollama`) | `http://localhost:11434/v1/chat/completions` |
+| `TLS_CERT` / `TLS_KEY` | TLS cert/key paths (production = CA-signed) | `./certs/localhost3000-*.pem` |
+| `TLS_MIN_VERSION` | Minimum negotiated TLS version | `TLSv1.2` |
+| `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX` | Per-IP rate-limit window and cap | `60000` / `120` |
+
+See `.env.example` for the full annotated list (credentials, auth, concurrency, validation).
 
 ## Certificates
 
@@ -70,6 +75,20 @@ certutil -user -addstore Root certs\localhost3000-cert.pem
 ```
 
 Restart the browser afterwards. To remove it later, use `certutil -user -delstore Root <thumbprint>`.
+
+### Production certificate (issuance & rotation)
+
+The self-signed pair above is for **local dev only**. In production the proxy runs on the
+Qlik node and must present a **CA-signed certificate for the proxy's own hostname** (the
+name the extension's Proxy URL points at), issued by your internal/enterprise CA so the
+Qlik page trusts it without a manual store import:
+
+- Issue the cert against the FQDN clients use; set `TLS_CERT` / `TLS_KEY` to its paths
+  (keep them off the repo — `certs/*.pem` stays git-ignored). `TLS_MIN_VERSION` defaults
+  to `TLSv1.2`; set `TLSv1.3` where the client fleet supports it.
+- **Rotation:** re-issue before expiry, drop the new pair in place, and restart the
+  Windows service (P06) — clients reconnect automatically. Overlap validity windows so a
+  renewal never leaves a gap. Rotation is a config/file change, not a code change.
 
 ## Usage
 

@@ -15,6 +15,9 @@ const { createLimiter } = require('./lib/limiter');
 const { admission } = require('./middleware/admission');
 const { modelAllowlist } = require('./lib/model-allowlist');
 const { validateBody } = require('./middleware/validate');
+const { corsOptions } = require('./lib/cors');
+const { securityHeaders } = require('./lib/security-headers');
+const { createRateLimiter } = require('./lib/rate-limit');
 const { installGracefulShutdown } = require('./lib/shutdown');
 
 function readFileMaybe(p) { return p ? fs.readFileSync(p) : undefined; }
@@ -71,18 +74,31 @@ const setReady = (v) => { ready = v; };
 // eslint-disable-next-line no-unused-vars
 function isReady() { return ready; }
 
+// TLS options (P05 §4.1): cert/key from config (production = CA-signed cert for the
+// proxy hostname); the self-signed localhost pair remains the dev default. A modern
+// TLS floor (default 1.2, prefer 1.3) is enforced on the handshake.
 const options = {
-  key: fs.readFileSync('./certs/localhost3000-key.pem'), // Path to your private key
-  cert: fs.readFileSync('./certs/localhost3000-cert.pem'), // Path to your certificate
+  key: fs.readFileSync(process.env.TLS_KEY || './certs/localhost3000-key.pem'),
+  cert: fs.readFileSync(process.env.TLS_CERT || './certs/localhost3000-cert.pem'),
+  minVersion: process.env.TLS_MIN_VERSION || 'TLSv1.2',
 };
 
-// Configure CORS - in production, restrict this to your Qlik Sense domain
-app.use(cors({
-  origin: process.env.QLIK_ORIGIN || 'https://your-qlik-server', // Set QLIK_ORIGIN in .env
-  credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-api-key', 'Origin', 'X-Requested-With', 'Accept', 'anthropic-version'],
+// Don't advertise the framework (P05 §4.5).
+app.disable('x-powered-by');
+
+// Security response headers on every response — buffered and streamed (P05 §4.3).
+app.use(securityHeaders());
+
+// IP-based rate limiting as a coarse backstop BEFORE auth, so an unauthenticated flood
+// is shed before any mutual-TLS work (P05 §4.4). Per-user limits (P03) remain primary.
+app.use(createRateLimiter({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
+  max: Number(process.env.RATE_LIMIT_MAX) || 120,
 }));
+
+// CORS: strict exact-match origin allowlist (QLIK_ORIGINS, comma-separated) — an
+// unlisted origin gets no CORS headers and its preflight is denied (P05 §4.2).
+app.use(cors(corsOptions()));
 
 // Parse JSON request bodies, capped at a per-request size limit (P04 §4.3). Sufficient
 // for chart data + context but not open-ended; oversize bodies are rejected 413 below.
