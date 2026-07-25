@@ -43,7 +43,8 @@ param(
   [string] $LogLevel,
   [switch] $DevCert,
   [switch] $TrustCert,
-  [switch] $InstallService
+  [switch] $InstallService,
+  [switch] $WithDevDeps
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,9 +61,13 @@ $nodeMajor = [int](& node -e "process.stdout.write(String(process.versions.node.
 if ($nodeMajor -lt 18) { Write-Error "Node.js $nodeMajor is too old; need >= 18."; exit 1 }
 Ok "Node.js $(& node -v) OK"
 
-# 2. Dependencies (reproducible from the committed lockfile).
-Info 'Installing dependencies (npm ci)…'
-if (Test-Path 'package-lock.json') { & npm ci } else { & npm install }
+# 2. Dependencies — RUNTIME only (--omit=dev). The proxy runtime needs just
+# axios/cors/dotenv/express; ESLint (a devDependency) and its deep, deprecated tree are
+# for CI/local lint only and must NOT land on a production node (that tree is where the
+# npm-audit "high severity" findings come from). Use -WithDevDeps to include them.
+Info 'Installing runtime dependencies (npm ci --omit=dev)…'
+$omit = if ($WithDevDeps) { @() } else { @('--omit=dev') }
+if (Test-Path 'package-lock.json') { & npm ci @omit } else { & npm install @omit }
 if ($LASTEXITCODE -ne 0) { Write-Error 'npm install failed.'; exit 1 }
 Ok 'Dependencies installed'
 

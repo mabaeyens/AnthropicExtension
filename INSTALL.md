@@ -1,18 +1,25 @@
-# Install & Run — Anthropic AI Assistant (v0.4.0)
+# Install & Run — Anthropic AI Assistant (v0.5.0)
 
-> ⚠️ **Demo only — no warranty, no liability.** This is a demonstration asset, **not** a Qlik product
-> and **not** production-hardened. **Neither Qlik nor the author accept any liability** for any issue,
-> data exposure, cost, or damage in any customer or production environment. **Use at your own risk.**
+> ⚠️ **Demo only — no warranty, no liability.** This is a demonstration asset, **not** a Qlik product.
+> **Neither Qlik nor the author accept any liability** for any issue, data exposure, cost, or damage in
+> any customer or production environment. **Use at your own risk.**
 >
 > **Data leaves your environment.** Asking a question sends Qlik data — the **full** selected
 > chart/table (complete hypercube), the app's **table and field names**, and **master
-> dimension/measure definitions** — out of your on-prem Qlik Sense environment to an external LLM
-> (`api.anthropic.com` by default, or whatever your proxy targets). The API key is only **obfuscated**
-> in `localStorage`. **Do not use with sensitive, regulated, or personal data** unless that egress is
-> permitted.
+> dimension/measure definitions** — out of your on-prem Qlik Sense environment, **through the proxy**,
+> to an external LLM (`api.anthropic.com` by default). The API key is held on the **proxy**
+> (server-side), never in the browser. **Do not use with sensitive, regulated, or personal data**
+> unless that egress is permitted.
 
-This package contains the full Qlik Sense visualization extension. End users configure **only an API
-key** — everything else has a sensible default.
+This package contains the Qlik Sense visualization extension. As of v0.5.0 it is **proxy-only**: you
+must **deploy the proxy** (which holds the API key and authenticates the Qlik session) and point the
+extension at it — there is no direct-browser mode and no API key is entered in the browser.
+
+> ### Prerequisite: deploy the proxy
+> Deploy [`proxy/`](./proxy) on a reachable host (typically the Qlik node). Its
+> `scripts/setup.ps1` automates the install (Node check, `npm ci`, dev TLS cert, `.env`, and the
+> Windows service). Set at least `ANTHROPIC_API_KEY`, `QLIK_SESSION_URL`, the Qlik client certs, and
+> `QLIK_ORIGINS` in its `.env`. Full instructions: [`proxy/README.md`](./proxy/README.md).
 
 ---
 
@@ -30,8 +37,8 @@ reload Qlik Sense Desktop.
 
 ### Qlik Sense Enterprise on Windows (client-managed / QSEoW)
 1. In the **QMC**, go to **Extensions → Import** and upload this `.zip`.
-2. The default direct browser call to `api.anthropic.com` normally works on QSEoW as-is. If your
-   environment blocks the outbound call, use the optional **Proxy URL** instead — see §4.
+2. Make sure the **proxy is deployed and reachable** (see the prerequisite above), then set the
+   **Proxy URL** in the extension properties — see §4.
 
 > **Qlik Cloud is out of scope.** This extension targets client-managed Qlik Sense on Windows. Qlik
 > Cloud already provides native AI assistants, so Cloud support is not planned.
@@ -43,8 +50,9 @@ reload Qlik Sense Desktop.
 2. From the **Custom objects** panel, drag **“Anthropic AI Assistant”** onto the sheet.
 
 ## 3. Configure & use (end user)
-1. In the extension's **properties panel**, paste your **Anthropic API key** (not needed if you only
-   use a local model).
+1. In the extension's **properties panel**, set the **Proxy URL** (e.g.
+   `https://your-host:3000/api/anthropic`) and, for local models, the **Local model URL**. There is
+   **no API key field** — the key lives on the proxy. Optionally set the **Log level**.
 2. In the floating panel, click **Add Chart**, click one or more charts on the sheet, type a question,
    and **Submit**. The answer **streams in as it is generated**; replies appear in a **Markdown chat
    thread** with memory (newest on top). Use **New chat** to reset and the **Copy** button to copy a
@@ -63,28 +71,33 @@ hypercube is retrieved; if the data to be sent exceeds ~65 KB the panel **asks y
 
 ---
 
-## 4. Optional: use a local proxy instead of direct calls
-If your organization prefers to keep the API key off the browser, set a **Proxy URL** in the
-extension properties (e.g. `https://localhost:3000/api/anthropic`) and run a proxy such as
-[cm-llm-proxy](./proxy) (bundled in this repo) that forwards POSTs (with the `x-api-key`
-header) to `https://api.anthropic.com/v1/messages`. The proxy must be reachable from the browser.
+## 4. The proxy (required)
+The extension talks **only** to the proxy — there is no direct-browser mode. Set the **Proxy URL** in
+the extension properties (e.g. `https://your-host:3000/api/anthropic`) to your deployed
+[`proxy/`](./proxy). The proxy holds the `ANTHROPIC_API_KEY` server-side, authenticates the caller's
+Qlik session, validates input, and enforces concurrency/rate limits. Deploy and configure it with
+`proxy/scripts/setup.ps1` — see [`proxy/README.md`](./proxy/README.md). For local models, also set the
+**Local model URL** to the proxy's `/api/ollama` route.
 
 ---
 
 ## How it works
-For the end-to-end data flow (User → Qlik Sense → Anthropic → back), transport selection (direct vs
-proxy), and key storage, see [`diagrams.md`](./diagrams.md).
+For the end-to-end data flow (User → Qlik Sense → proxy → Anthropic → back), authentication, and where
+the key lives, see [`diagrams.md`](./diagrams.md).
 
 ## Troubleshooting
-- **No response / network error in direct mode:** the browser's outbound call to `api.anthropic.com`
-  is being blocked by your environment — set a **Proxy URL** (§4) and route through a local proxy.
-- **“API key not found”:** enter the key in the properties panel; it is stored (encrypted) in the
-  browser's `localStorage` and reused across apps.
-- **401 / 403 from Anthropic:** the API key is invalid or lacks access to the selected model.
-- **Model errors:** pick a different model in the properties dropdown.
+- **No response / network error:** the **Proxy URL** is wrong or the proxy is unreachable — check the
+  proxy is running (`https://<host>:3000/health`) and its cert is trusted by the browser.
+- **401 Unauthenticated from the proxy:** the Qlik session couldn't be validated — confirm the
+  proxy's `QLIK_SESSION_URL` + client certs, and that the browser reaches the proxy through the Qlik
+  site so the session cookie is sent.
+- **403 Model not allowed:** the selected model isn't on the proxy's allowlist (`ALLOWED_*_MODELS`).
+- **503 "busy, try again":** the proxy's concurrency queue is full — retry shortly.
 - **"Add to sheet" does nothing / shows an edit-mode hint:** open the sheet in **Edit mode** first;
   chart creation writes to the live app and is only allowed while editing.
 - **Large-data warning before sending:** the selected table exceeds ~65 KB. Apply selections to filter
-  the data, or confirm to send it anyway (higher token cost / slower).
+  the data, or confirm to send it anyway (higher token cost / slower). A payload over the proxy's body
+  limit (~1 MB) is stopped client-side.
 - **Maps:** map visualizations are not yet supported for selection or chart creation.
-- **Verbose logs:** set `DEBUG_MODE: true` in `js/config.js` (off by default).
+- **Verbose logs:** set the **Log level** property (or `LOG_LEVEL` in `js/config.js`) to `DEBUG`;
+  lower to `ERROR`/`WARN` to quieten the console. The proxy has its own `LOG_LEVEL` in `.env`.

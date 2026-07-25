@@ -1,12 +1,12 @@
-# Security model (target architecture)
+# Security model
 
-> **Status: design reference for the in-progress production-hardening effort.**
-> This describes the **target** state, not the current one. The shipped **v0.4.0 is a
-> demo**: it holds the Anthropic API key (obfuscated) in the browser and the proxy
-> authenticates no one — see the disclaimer in [`../README.md`](../README.md). The
-> boundaries and controls below are realised by the hardening work (credential custody,
-> caller authentication, proxy-only transport). Until those land, treat the current
-> behaviour as demo-grade.
+> **Status: implemented in v0.5.0.** This was the design reference for the
+> production-hardening effort; the boundaries and controls below are now realised across
+> the proxy and extension — credential custody (key server-side, client key stripped),
+> caller authentication (Qlik session), proxy-only transport, input validation, and
+> transport hardening. The pre-0.5.0 demo held the API key (obfuscated) in the browser and
+> the proxy authenticated no one; that path is removed. Live on-node verification of the
+> Qlik-session carrier is the remaining step before release — see [`../README.md`](../README.md).
 
 This is the authoritative reference the security-bearing hardening work cites. It
 defines who the actors are, where the trust boundaries sit, what crosses them, and

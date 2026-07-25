@@ -55,8 +55,10 @@ cp .env.example .env
 # Edit .env: set the required vars (ANTHROPIC_API_KEY, QLIK_SESSION_URL, QLIK_CERT,
 # QLIK_KEY, QLIK_ORIGINS) and optionally LOG_LEVEL
 
-# 2. Install dependencies
-npm ci
+# 2. Install RUNTIME dependencies (omit dev tooling like ESLint on a production node —
+#    that dev tree is where npm-audit "high severity" findings come from and it never runs
+#    on the node). Use plain `npm ci` locally when you also want to lint/test.
+npm ci --omit=dev
 ```
 
 ## Configuration

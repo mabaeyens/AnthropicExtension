@@ -3,20 +3,19 @@
 Qlik Sense visualization extension that analyses chart data using a Large Language Model (Claude, via
 the Anthropic API) and can suggest and create Qlik charts from the model's responses.
 
-> ## 🔒 Hardened branch (`harden/e01-proxy-only`)
+> ## 🔒 Proxy-only as of v0.5.0
 >
-> On this branch the extension is **proxy-only** (spec E01): the browser holds **no API key** and
-> **never** calls `api.anthropic.com` directly. Every request goes to the **hardened proxy** under
-> [`proxy/`](./proxy), which holds the Anthropic key server-side (P01) and authenticates the caller by
-> their **Qlik session** (P02, forwarded as a credentialed cookie). `security.js`, the bundled
-> CryptoJS, the direct-browser transport, and the **API-key property are removed**. Configure a
-> **Proxy URL** (and, for local models, a **Local model URL**) pointing at your deployed proxy.
-> The sections below still describe the `main` (v0.4.0) direct-browser demo — they do **not** apply to
-> this branch's transport.
+> The extension is **proxy-only**: the browser holds **no API key** and **never** calls
+> `api.anthropic.com` directly. Every request goes to the **hardened proxy** under
+> [`proxy/`](./proxy), which holds the Anthropic key server-side and authenticates the caller by their
+> **Qlik session**. The direct-browser transport, the bundled crypto, and the API-key property have
+> been removed. You **must deploy the proxy** and set a **Proxy URL** (and, for local models, a
+> **Local model URL**) in the extension settings — see [Proxy (required)](#proxy-required) and
+> [`proxy/README.md`](./proxy/README.md) (its `scripts/setup.ps1` automates the install).
 
 > ## ⚠️ Demo only — no warranty, no liability
 >
-> This is an **experimental demonstration asset (v0.4.0)**, not a product. It is **not** hardened for
+> This is a **demonstration asset (v0.5.0)**, not a supported Qlik offering or product. It is **not** hardened for
 > production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
 > accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
 > customer, production, or other environment. **Use entirely at your own risk.**
@@ -26,19 +25,18 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > When a question is asked, the extension sends Qlik data **out of your on-prem Qlik Sense environment
 > to an external Large Language Model**. As of v0.3.0 this includes the **full** contents of the
 > selected chart/table (the complete hypercube, not just a preview), the app's **field and table
-> names**, and **master dimension/measure definitions**. In the default mode this goes from the
-> **browser directly to `api.anthropic.com`**; with the optional proxy it goes to whichever LLM
-> endpoint the proxy targets. The Anthropic API key is only **obfuscated** in `localStorage`, not
-> strongly encrypted. **Do not use this with sensitive, regulated, or personal data** unless that
-> data egress is explicitly permitted in your environment.
+> names**, and **master dimension/measure definitions**. This is sent **through the proxy** to
+> whichever LLM endpoint it targets (Anthropic by default). The Anthropic API key is held only on the
+> proxy (server-side), never in the browser. **Do not use this with sensitive, regulated, or personal
+> data** unless that data egress is explicitly permitted in your environment.
 >
 > **Exception — local models:** selecting **Ministral 3 8B** or **Ministral 3 3B** (local) runs
 > inference on your own machine via Ollama, so **no chart data leaves your environment**. See
 > [Local models](#local-models-ministral-3-via-ollama).
 >
 > See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), and [`diagrams.md`](./diagrams.md).
-> Design references for the in-progress production-hardening effort (target architecture, not yet
-> implemented): [`docs/security-model.md`](./docs/security-model.md) and
+> The production-hardening architecture (implemented across the proxy and extension in v0.5.0):
+> [`docs/security-model.md`](./docs/security-model.md) and
 > [`docs/concurrency-model.md`](./docs/concurrency-model.md).
 
 > ℹ️ This repository is **not public yet**; it may be made public in the future. The disclaimer above
@@ -60,35 +58,36 @@ local Ministral models at any time. Switching clears the thread (history can't m
 models), and the model that produced each answer is named in its footer.
 
 **Where the data goes:** the selected chart's data — as of v0.3.0 the **full** hypercube, not just an
-initial page — together with the data-model structure is sent to an external LLM. By default the
-extension calls `https://api.anthropic.com/v1/messages` **directly from the browser** using Anthropic's
-`anthropic-dangerous-direct-browser-access` header — **no proxy required**. On client-managed Qlik
-Sense (QSEoW) the direct call normally works as-is; if your environment blocks it, set the optional
-**Proxy URL** (see Installation). If the selected data exceeds ~65 KB, the panel **warns before
-sending**.
+initial page — together with the data-model structure is sent **through the proxy** to an external
+LLM. The extension POSTs to your configured **Proxy URL** (default
+`https://localhost:3000/api/anthropic`), forwarding your **Qlik session** so the proxy can
+authenticate you; the proxy injects the API key server-side and calls Anthropic. If the selected data
+exceeds ~65 KB the panel **warns before sending**, and a payload above the proxy's body limit
+(~1 MB) is stopped client-side with a friendly message.
 
 This extension targets **client-managed Qlik Sense on Windows** (Desktop and Enterprise). **Qlik Cloud
 is intentionally out of scope** — Qlik Cloud already ships native AI assistants, so there is no plan to
 support it here.
 
-Optionally, you can route requests through a **local Node.js proxy** ([cm-llm-proxy](./proxy)) by setting a **Proxy URL** in the extension properties — useful if your organization prefers to keep the API key server-side.
-
-> ℹ️ The proxy lives in this repo under [`./proxy`](./proxy). It was previously the standalone
-> [`mabaeyens/cm-llm-proxy`](https://github.com/mabaeyens/cm-llm-proxy) repository, now merged here
-> (with its history) so the extension and proxy version together.
+> ℹ️ The proxy lives in this repo under [`./proxy`](./proxy) (imported with history from the former
+> standalone [`mabaeyens/cm-llm-proxy`](https://github.com/mabaeyens/cm-llm-proxy) repo). It holds the
+> API key server-side, authenticates the Qlik session, and enforces concurrency/rate limits — see
+> [`proxy/README.md`](./proxy/README.md).
 
 ## Requirements
 
 - Client-managed Qlik Sense on Windows — Desktop or Enterprise (QSEoW) ≥ 3.0 (not Qlik Cloud)
-- Anthropic API key (the **only** thing an end user configures — **not** required for the local model)
-- For the optional proxy mode only: a Node.js proxy at `https://localhost:3000/api/anthropic` — see [cm-llm-proxy](./proxy)
-- For the local models only: a local [Ollama](https://ollama.com) server plus [cm-llm-proxy](./proxy) ≥ v1.1.0 (`/api/ollama` route) — see [Local models](#local-models-ministral-3-via-ollama)
-- For **streamed** answers through a proxy: [cm-llm-proxy](./proxy) ≥ **v1.2.0**, which pipes the upstream response through instead of buffering it. Older versions still work — the extension just falls back to showing the whole answer at once.
+- The **hardened proxy deployed and reachable** (it holds the Anthropic API key and authenticates the
+  Qlik session) — see [`proxy/`](./proxy). The proxy is **required**; there is no direct-browser mode.
+- The **Anthropic API key** — configured **on the proxy** (`ANTHROPIC_API_KEY` in its `.env`), not in
+  the browser. Not needed for the local-model path.
+- For the local models: a local [Ollama](https://ollama.com) server behind the proxy's `/api/ollama`
+  route — see [Local models](#local-models-ministral-3-via-ollama).
 
 ## Download
 
-**Latest release: [v0.4.0](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.4.0)** —
-download `AnthropicExtension-v0.4.0.zip` from the
+**Latest release: [v0.5.0](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.5.0)** —
+download `AnthropicExtension-v0.5.0.zip` from the
 [releases page](https://github.com/mabaeyens/AnthropicExtension/releases). See
 [`CHANGELOG.md`](./CHANGELOG.md) for what changed.
 
@@ -98,28 +97,28 @@ You can either use the packaged release zip or copy the repository folder direct
 
 1. Get the extension into the Qlik Sense extensions directory:
    - **Enterprise (QSEoW)**: in the QMC → **Extensions → Import**, upload
-     `AnthropicExtension-v0.4.0.zip`.
+     `AnthropicExtension-v0.5.0.zip`.
    - **Desktop**: unzip the release into
      `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\` (or copy this repo
      folder there).
 2. Reload Qlik Sense
 3. The extension will appear in the assets panel as **"Anthropic AI Assistant"**
 
-> On client-managed Qlik Sense (QSEoW) the default direct browser call usually works without extra
-> configuration. If your environment blocks the outbound call, set the optional **Proxy URL** in the
-> extension properties (see below) and run a local proxy.
+> **The proxy must be deployed first.** Deploy [`proxy/`](./proxy) (its `scripts/setup.ps1` automates
+> Node check, deps, dev cert, `.env`, and the Windows service), then set the **Proxy URL** in the
+> extension properties. Without a reachable, authenticated proxy the assistant cannot answer.
 
 ## Configuration
 
-End users only enter an **API key**. The following are exposed in the extension's properties panel
-(no code editing required):
+There is **no API-key field** — the key lives on the proxy. The following are exposed in the
+extension's properties panel (no code editing required):
 
 | Property | Default | Description |
 |---|---|---|
-| API key | — | Your Anthropic API key (stored encrypted in `localStorage`, shared across apps). Not required for local models; the "no API key" notice is hidden while one is selected |
 | Default model | `claude-haiku-4-5` | The model each session **starts** with — switch any time with **Pick model** in the chat panel |
-| Proxy URL | _(blank)_ | Leave blank to call the API directly; set it to route Claude requests through a local proxy |
-| Local model URL | _(blank)_ | Ollama endpoint (via the HTTPS proxy) used when a local model is selected — see [Local models](#local-models-ministral-3-via-ollama) |
+| Proxy URL | _(config default)_ | **Required.** The hardened proxy's Anthropic route, e.g. `https://your-host:3000/api/anthropic`. Leave blank to use the `config.js` default |
+| Local model URL | _(config default)_ | The proxy's Ollama route, used when a local model is selected — see [Local models](#local-models-ministral-3-via-ollama) |
+| Log level | `DEBUG` | Browser-console verbosity: **ERROR / WARN / INFO / DEBUG**. Applied live. Lower it to quieten the console once past testing |
 
 In the chat panel itself:
 
@@ -132,30 +131,35 @@ Advanced defaults can still be tuned in `js/config.js`:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `API.URL` | `https://api.anthropic.com/v1/messages` | Direct Anthropic endpoint (used when no Proxy URL is set) |
-| `API.VERSION` | `2023-06-01` | `anthropic-version` header for direct calls |
+| `API.PROXY_URL` | `https://localhost:3000/api/anthropic` | Proxy route for hosted (Anthropic) models — the mandatory transport; overridden by the Proxy URL property |
 | `API.MODEL` | `claude-haiku-4-5` | Model the session starts with (Claude id, or `ministral-local` / `ministral-local-3b`) |
 | `API.MODELS` | 5 entries | Model **registry** — `{ id, label, hint, local, tag }`. Drives both the properties dropdown and the in-panel picker, so they can't drift apart. Add a model here and it appears in both |
 | `API.MAX_TOKENS` | `4000` | Maximum tokens in the response |
-| `API.LOCAL.URL` | `https://localhost:3000/api/ollama` | Local model endpoint (Ollama via the HTTPS proxy) |
+| `API.LOCAL.URL` | `https://localhost:3000/api/ollama` | Proxy route for the local model (Ollama) |
 | `API.LOCAL.MODEL_TAG` | `ministral-3-demo` | Fallback Ollama model name, used only if a registry entry has no `tag` |
 | `CHAT.STREAM` | `true` | Default for the streaming toggle |
-| `DATA.MAX_ROWS` | `1000` | Maximum rows sent to the LLM |
-| `DEBUG_MODE` | `false` | Enable/disable console logs |
+| `DATA.MAX_ROWS` | `1000` | Maximum rows sent to the LLM (all data-collection bounds live in `DATA.*`, validated at init) |
+| `LOG_LEVEL` | `DEBUG` | Console verbosity (ERROR/WARN/INFO/DEBUG); overridden by the Log level property |
 
-## Optional proxy
+## Proxy (required)
 
-By default the extension calls `https://api.anthropic.com/v1/messages` directly from the browser
-(sending the `anthropic-version` and `anthropic-dangerous-direct-browser-access` headers). No proxy
-is needed.
+Every request goes through the hardened proxy in [`proxy/`](./proxy) — there is no direct-browser
+mode. The proxy:
 
-If you prefer to keep the API key off the browser, set a **Proxy URL** in the extension properties
-and run the **[cm-llm-proxy](./proxy)** Node.js server (or any proxy)
-that:
+- **Holds the Anthropic API key** server-side (`ANTHROPIC_API_KEY`) and strips any client key header,
+  so the key is never in the browser.
+- **Authenticates the caller** by validating the forwarded Qlik session before any upstream call.
+- **Validates input** (per-route body schema + a server-side model allowlist + size caps), enforces
+  **concurrency** limits with a bounded queue + graceful drain, and hardens transport (CORS allowlist,
+  security headers, TLS floor, per-IP rate limit).
+- Exposes `/health`, `/ready`, `/metrics`; writes structured logs (verbosity via `LOG_LEVEL`) plus a
+  separate audit log; and can run as an auto-restart Windows service.
+- Bridges the local-model path: `/api/ollama` forwards to a plain-HTTP Ollama server from the HTTPS
+  Qlik page.
 
-- Listens at your Proxy URL (e.g. `https://localhost:3000/api/anthropic`)
-- Accepts POST requests with the `x-api-key` header (Anthropic key)
-- Forwards them to `https://api.anthropic.com/v1/messages`
+Deploy it with `proxy/scripts/setup.ps1` (automates Node check, `npm ci`, dev cert, `.env`, and the
+service), then point the extension's **Proxy URL** / **Local model URL** at it. Full setup, config,
+and operations are in [`proxy/README.md`](./proxy/README.md).
 
 ## Local models (Ministral 3 via Ollama)
 
@@ -192,10 +196,10 @@ Qlik (HTTPS) → https://localhost:3000/api/ollama  (cm-llm-proxy) → http://lo
    printf 'FROM ministral-3:3b\nPARAMETER num_ctx 8192\n' > Modelfile
    ollama create ministral-3b-demo -f Modelfile
    ```
-2. Run **[cm-llm-proxy](./proxy)** ≥ v1.1.0 (it exposes the
-   `/api/ollama` route; ≥ v1.2.0 to stream). Set `OLLAMA_URL` in its `.env` if Ollama isn't at the
-   default `http://localhost:11434`, and `QLIK_ORIGIN` to the URL you open the hub with — CORS
-   compares it exactly, so `https://localhost` will reject a hub served from `https://myserver`.
+2. Run the **[proxy](./proxy)** (it exposes the `/api/ollama` route and streams). Set `OLLAMA_URL` in
+   its `.env` if Ollama isn't at the default `http://localhost:11434`, and `QLIK_ORIGINS` to the
+   URL(s) you open the hub with — CORS compares them exactly, so `https://localhost` will reject a hub
+   served from `https://myserver`.
 3. **Trust the proxy's certificate.** Without it the browser blocks the extension's request as a
    status-less XHR failure — not a warning you can click through. On Windows, Chrome and Edge read
    the OS store: `certutil -user -addstore Root certs\localhost3000-cert.pem`, then restart the
@@ -220,7 +224,8 @@ Qlik (HTTPS) → https://localhost:3000/api/ollama  (cm-llm-proxy) → http://lo
 
 1. Open a dashboard in Qlik Sense
 2. Drag the **"Anthropic AI Assistant"** extension onto a sheet
-3. Enter your Anthropic API key in the properties panel (not needed for local models)
+3. Set the **Proxy URL** (and **Local model URL** for local models) in the properties panel to point
+   at your deployed proxy — no API key is entered in the browser
 4. Click **"Add Chart"**, choose a visualization and type your question
 5. Optionally switch model with **Pick model** — the active one is shown under the submit row and in
    each answer's footer
@@ -239,13 +244,13 @@ The request path (User → Qlik Sense → **external LLM** → back) is:
 3. **Assemble** — `ui-controller.js` builds `{ userPrompt, chartData, context, systemPrompt, history }`
    as a running conversation. Chart data is resent only when the selection changes; context only on
    the first turn. If the payload exceeds ~65 KB it **prompts the user to confirm** before sending.
-4. **Send (data leaves on-prem)** — `anthropic-api.js` decrypts the key (`security.js`), formats the
-   message, and chooses the transport with `buildTransport()`:
-   - **Direct (default):** `POST https://api.anthropic.com/v1/messages` with `x-api-key`,
-     `anthropic-version`, and `anthropic-dangerous-direct-browser-access: true`.
-   - **Proxy (optional):** `POST <Proxy URL>` with `x-api-key`; the proxy forwards to the LLM.
-   - **Local model:** `POST <Local model URL>` in **OpenAI chat-completions** format (no key); the
-     proxy's `/api/ollama` route forwards to a local Ollama server. Data stays on the machine.
+4. **Send (data leaves on-prem)** — `anthropic-api.js` formats the message and POSTs through the
+   single **proxy transport** (`buildTransport()`), forwarding the Qlik session credential
+   (`credentials: 'include'`) — no API key ever leaves the browser:
+   - **Hosted:** `POST <Proxy URL>` (Anthropic Messages shape). The proxy authenticates the session,
+     injects the key, and forwards to `api.anthropic.com`.
+   - **Local model:** `POST <Local model URL>` in **OpenAI chat-completions** format; the proxy's
+     `/api/ollama` route forwards to a local Ollama server. Data stays on the machine.
 5. **Render** — with streaming on, `anthropic-api.streamToAnthropic()` reads the SSE response with
    `fetch` + `ReadableStream` and appends each delta as **plain text**; the Markdown is rendered and
    sanitized **once, when the stream ends** (`formatting.js` + bundled `marked.js`). Parsing Markdown
@@ -272,25 +277,32 @@ AnthropicExtension/
 ├── README.md                # This file
 ├── CHANGELOG.md             # Release notes
 ├── INSTALL.md               # Deployment / run instructions
+├── RELEASING.md             # Immutable-release checklist
 ├── diagrams.md              # Data-flow & sequence diagrams (Mermaid)
 ├── icon.png
+├── package.json             # Dev-only: ESLint + node:test (NOT shipped; runtime stays AMD)
+├── scripts/                 # Dev-only: pre-release-check.ps1
+├── test/                    # Dev-only: node:test unit suites + AMD test harness
+├── proxy/                   # The hardened proxy (in-tree; holds the key, authenticates the session)
+├── docs/                    # security-model.md, concurrency-model.md
 ├── css/
 │   └── style.css
 ├── html/
 │   └── template.html        # Reference copy (panel markup is inlined in js/template.js)
 └── js/
-    ├── config.js            # Central configuration
-    ├── main.js              # Extension initialization + properties panel
-    ├── anthropic-api.js     # API client (direct or via proxy) + context/message serialization
+    ├── config.js            # Central configuration (single source of VERSION/BUILD, DATA bounds, LOG_LEVEL)
+    ├── config-validate.js   # Boot config validation (proxy URL, model registry, numeric bounds)
+    ├── main.js              # Extension initialization + properties panel + teardown
+    ├── anthropic-api.js     # Proxy transport + context/message serialization (no key in the browser)
     ├── data-collector.js    # Data extraction (full hypercube) + real data-model context
     ├── data-format.js       # Data formatting for the LLM
-    ├── ui-controller.js     # Panel UI, conversation thread, copy, large-payload warning
+    ├── ui-controller.js     # Panel UI, conversation thread, single-flight lifecycle, copy, warnings
     ├── chart-builder.js     # Parse chart spec → live preview / add to sheet (Qlik viz API)
-    ├── formatting.js        # Markdown→HTML rendering of responses (uses marked.js)
+    ├── formatting.js        # Markdown→HTML rendering (marked) + fail-closed DOMPurify sanitize
+    ├── log.js               # Level-gated console logging (ERROR/WARN/INFO/DEBUG)
     ├── template.js          # Inlined panel markup (loaded with the bundle)
-    ├── security.js          # API key management (CryptoJS AES, shared key)
     └── lib/
-        ├── crypto-js.min.js # CryptoJS 4.2.0 — bundled, no npm install required
+        ├── dompurify.min.js # DOMPurify — bundled HTML sanitizer
         └── marked.min.js    # marked 12.x — bundled Markdown renderer
 ```
 
@@ -298,14 +310,15 @@ AnthropicExtension/
 
 - [x] Data extraction from native charts (bar, line, combo, box, etc.); engine-validated id resolution
 - [x] **Full hypercube** retrieval for large tables (with a ~65 KB pre-send warning)
-- [x] Analysis with Claude (direct browser call by default; optional proxy)
+- [x] Analysis with Claude **through the hardened proxy** (key held server-side; Qlik-session auth)
 - [x] **Local model** backend (Ministral 3 8B / 3B via Ollama) — no API key, data stays on-machine
 - [x] **In-panel model picker** — switch models mid-session; the answering model is named per response
 - [x] **Streamed answers** (token by token), with a toggle and an automatic buffered fallback
 - [x] **Conversation thread** with memory, Markdown rendering, and per-response copy
 - [x] **Real data-model context** (tables, fields, master dimensions/measures) sent on first use
 - [x] **Suggest a chart** (live preview) and **add to sheet** (Edit mode; new-sheet fallback)
-- [x] Encrypted API key storage (CryptoJS AES), shared across Qlik apps
+- [x] **Proxy-only transport** (v0.5.0) — no API key in the browser; single-flight request lifecycle;
+      configurable log verbosity (ERROR/WARN/INFO/DEBUG)
 - [ ] **Map** visualizations (selection / creation) — not yet supported
 - Qlik Cloud — **out of scope** (Cloud already has native AI assistants)
 
@@ -318,12 +331,12 @@ AnthropicExtension/
   unless that egress is permitted.
 - Compatible with **client-managed Qlik Sense on Windows** (Desktop and Enterprise / QSEoW). Qlik
   Cloud is out of scope (it already has native AI assistants)
-- The API key is encrypted with CryptoJS AES before being written to `localStorage` and is reused
-  across all Qlik apps. The encryption passphrase is bundled in the extension, so this is
-  **obfuscation, not strong secrecy** — appropriate for on-prem internal deployments where the goal
-  is to keep the key out of plain sight, not to defend against a determined local attacker.
-- `crypto-js.min.js` is bundled in the repo; no `npm install` required
-- Model and Proxy URL are set in the extension properties panel; deeper defaults live in `js/config.js`
+- **The API key is never in the browser.** It lives only on the proxy (`ANTHROPIC_API_KEY`), which
+  injects it server-side and strips any client-supplied key header. The extension forwards the Qlik
+  session so the proxy can authenticate the caller.
+- Model, Proxy URL, Local model URL, and Log level are set in the extension properties panel; deeper
+  defaults live in `js/config.js`. Dev tooling (`package.json`, `test/`, ESLint) is **not shipped** —
+  the runtime stays plain AMD.
 
 ## Author
 
