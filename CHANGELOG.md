@@ -2,9 +2,77 @@
 
 All notable changes to this extension are documented here.
 
-> ⚠️ **Experimental / demo only.** This extension is for demonstration purposes. It is not
-> hardened for production use. The API key is obfuscated (not strongly encrypted) in the browser,
-> and in direct mode the key is sent from the browser to `api.anthropic.com`.
+> ℹ️ **As of 0.5.0 the extension is proxy-only.** The browser no longer holds an API key and never
+> calls `api.anthropic.com` directly — every request goes through the hardened proxy (under
+> [`proxy/`](./proxy)), which holds the Anthropic key server-side and authenticates the caller by
+> their Qlik session. The extension therefore **requires the proxy to be deployed** (with TLS +
+> Qlik-session validation configured). Chart data is still sent to the configured LLM endpoint —
+> review what leaves your environment before use. Selecting a **local model** (Ministral via
+> Ollama) keeps inference on-machine.
+
+## [0.5.0] - 2026-07-25
+
+Production-hardening release. Turns the demo-grade extension + `cm-llm-proxy` into a hardened,
+monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tested (26 extension +
+86 proxy `node:test` cases) with CI on both artefacts.
+
+### ⚠️ Breaking
+
+- **Proxy is now mandatory; direct-from-browser mode is removed.** The extension no longer stores
+  or sends an Anthropic API key. Set a **Proxy URL** (and, for local models, a **Local model URL**)
+  pointing at your deployed proxy. Existing instances that relied on the browser key / direct mode
+  must switch to the proxy, which must be deployed with TLS and Qlik-session validation.
+- The **API key** property has been removed from the extension settings; the key lives only on the
+  proxy.
+
+### Security
+
+- **Credential custody (P01):** the proxy holds the Anthropic key server-side (from env), strips any
+  client-supplied key header, and injects the key itself. `js/security.js` and the bundled CryptoJS
+  are deleted from the extension.
+- **Caller authentication (P02):** the proxy validates the forwarded Qlik session (mutual-TLS to the
+  Qlik Proxy/Repository API) before any upstream call; the extension forwards the session credential.
+- **Input validation & model allowlist (P04):** per-route body-schema validation, request-size caps,
+  and a server-side model allowlist — invalid/oversize/disallowed requests are rejected before the
+  upstream call.
+- **Transport hardening (P05):** strict CORS origin allowlist, security response headers, a modern
+  TLS floor, and per-IP rate limiting.
+- **Output sanitization (E04):** audited every DOM sink; model output goes through DOMPurify
+  (fail-closed) and all dynamic strings through escaping; streaming uses `textContent`.
+
+### Added
+
+- **Concurrency & resilience (P03):** admission control with global + per-user in-flight ceilings, a
+  bounded FIFO queue (`503` + `Retry-After` on overflow/timeout), streaming backpressure, upstream
+  keep-alive pooling, and graceful drain on shutdown.
+- **Observability & service (P06):** structured JSON request logs, a separate audit log
+  (who-asked-what-when, no bodies/secrets), `/health` · `/ready` · `/metrics`, boot-time config
+  validation, and a Windows-service wrapper (auto-start/restart, log rotation).
+- **Client request lifecycle (E02):** at most one in-flight request per widget — Submit/Suggest are
+  disabled while busy, a unified abort handle covers both buffered and streamed paths, the app-context
+  cache is race-safe, and a proxy `503` surfaces as a friendly "busy, try again" message.
+- **Extension teardown (E03):** a real teardown on Qlik `destroy` releases global listeners, preview
+  vizzes, engine session objects, and any in-flight request — no leaks across sheet navigation.
+- **Dev tooling & tests (E06/P07):** dev-only `package.json` + ESLint + `node:test` suites (an AMD
+  test harness for the pure modules; integration + load/drain harness for the proxy) and GitHub
+  Actions CI, path-filtered per artefact. The shipped runtime stays plain AMD (no build step).
+- **Config & release hardening (E05/E07):** all data-collection bounds centralised in `config.DATA`
+  and validated at init; config validation surfaces problems in the panel; `package.ps1` fails on a
+  `config.js`/`.qext` version mismatch; a `RELEASING.md` checklist and `scripts/pre-release-check.ps1`
+  guard the immutable-release rules (new tag only, matching versions, CHANGELOG entry).
+
+### Changed
+
+- **Monorepo (M01):** the proxy now lives in-tree under `proxy/` (history preserved), versioned
+  independently from the extension.
+- Data-collection caps (`MAX_FETCH_CELLS`, `MAX_CELLS_PER_PAGE`, `FETCH_PAGE_CONCURRENCY`,
+  `MAX_FIELDS`, payload thresholds) are consolidated in `config.DATA` and reconciled with the proxy
+  body-size limit, so an oversize payload is caught client-side with a friendly message.
+
+### Removed
+
+- `js/security.js` and `js/lib/crypto-js.min.js` (no browser-side key), the direct-browser transport
+  and its `x-api-key` / `anthropic-dangerous-direct-browser-access` headers, and the API-key setting.
 
 ## [0.4.0] - 2026-07-24
 
