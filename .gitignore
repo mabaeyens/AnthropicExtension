@@ -31,6 +31,11 @@ __pycache__/
 *.docx
 /*.pdf
 
+# Local slide decks and their build scripts (working files, not shipped)
+*.pptx
+build_deck*.py
+_ul
+
 # Claude Code local files (kept locally, not shipped in the repo)
 .claude/
 CLAUDE.md
