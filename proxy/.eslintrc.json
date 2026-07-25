@@ -1,0 +1,18 @@
+{
+  "root": true,
+  "env": { "node": true, "es2022": true },
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "script" },
+  "extends": "eslint:recommended",
+  "rules": {
+    "no-console": "off",
+    "no-await-in-loop": "off",
+    "no-plusplus": "off",
+    "no-empty": ["error", { "allowEmptyCatch": true }]
+  },
+  "overrides": [
+    {
+      "files": ["test/**/*.js"],
+      "env": { "node": true }
+    }
+  ]
+}

@@ -17,7 +17,7 @@ function fakeTimers() {
   let seq = 1;
   const timers = new Map();
   return {
-    setTimeout: (fn, ms) => { const id = seq++; timers.set(id, fn); return id; },
+    setTimeout: (fn) => { const id = seq++; timers.set(id, fn); return id; },
     clearTimeout: (id) => { timers.delete(id); },
     fire: (id) => { const fn = timers.get(id); timers.delete(id); if (fn) fn(); },
     fireAll: () => { for (const [, fn] of timers) fn(); timers.clear(); },

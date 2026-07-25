@@ -9,7 +9,7 @@ const path = require('path');
 
 let Service;
 try {
-  ({ Service } = require('node-windows')); // eslint-disable-line global-require, import/no-unresolved
+  ({ Service } = require('node-windows'));
 } catch {
   console.error('[uninstall-service] node-windows is not installed. Run:');
   console.error('  npm install --no-save node-windows');
