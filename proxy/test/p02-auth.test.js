@@ -9,7 +9,9 @@ const assert = require('node:assert/strict');
 const {
   createValidator, extractUser, AuthError, UpstreamError,
 } = require('../lib/auth-qlik');
-const { authenticate, extractSessionRef } = require('../middleware/authenticate');
+const {
+  authenticate, extractSessionRef, parseCookies, DEFAULT_COOKIE,
+} = require('../middleware/authenticate');
 
 // A controllable fake QPS fetcher: returns a scripted { status, body } and counts calls.
 function fakeFetch(script) {
@@ -136,7 +138,56 @@ test('middleware → 401 on AuthError, 503 on UpstreamError', async () => {
   assert.equal(res503.statusCode, 503);
 });
 
-test('extractSessionRef reads the x-qlik-session header', () => {
+test('extractSessionRef reads the x-qlik-session header (explicit override)', () => {
   assert.equal(extractSessionRef({ headers: { 'x-qlik-session': 'abc' } }), 'abc');
   assert.equal(extractSessionRef({ headers: {} }), null);
+});
+
+// ── cookie carrier (same-site flow) ─────────────────────────────────────────
+test('parseCookies splits the Cookie header and URL-decodes values', () => {
+  const jar = parseCookies('X-Qlik-Session=abc%20123; other=1');
+  assert.equal(jar['X-Qlik-Session'], 'abc 123');
+  assert.equal(jar.other, '1');
+  assert.deepEqual(parseCookies(''), {});
+  assert.deepEqual(parseCookies(undefined), {});
+});
+
+test('extractSessionRef reads the default X-Qlik-Session cookie', () => {
+  assert.equal(DEFAULT_COOKIE, 'X-Qlik-Session');
+  const req = { headers: { cookie: 'foo=bar; X-Qlik-Session=sess-guid; baz=2' } };
+  assert.equal(extractSessionRef(req), 'sess-guid');
+});
+
+test('cookie lookup is case-insensitive', () => {
+  const req = { headers: { cookie: 'x-qlik-session=lower' } };
+  assert.equal(extractSessionRef(req), 'lower');
+});
+
+test('named virtual proxy → cookieName override', () => {
+  const req = { headers: { cookie: 'X-Qlik-Session-mkt=vp-sess' } };
+  assert.equal(extractSessionRef(req, { cookieName: 'X-Qlik-Session-mkt' }), 'vp-sess');
+  // The default name is absent, so without the override there is nothing to read.
+  assert.equal(extractSessionRef(req), null);
+});
+
+test('header wins over cookie when both are present', () => {
+  const req = { headers: { 'x-qlik-session': 'from-header', cookie: 'X-Qlik-Session=from-cookie' } };
+  assert.equal(extractSessionRef(req), 'from-header');
+});
+
+test('no header and no matching cookie → null', () => {
+  assert.equal(extractSessionRef({ headers: { cookie: 'unrelated=1' } }), null);
+  assert.equal(extractSessionRef({ headers: {} }), null);
+});
+
+test('middleware validates the cookie-borne session end-to-end', async () => {
+  let seenRef = null;
+  const mw = authenticate(async (ref) => { seenRef = ref; return 'DIR\\alice'; });
+  const req = { headers: { cookie: 'X-Qlik-Session=cookie-sess' } };
+  const res = fakeRes();
+  let nexted = false;
+  await mw(req, res, () => { nexted = true; });
+  assert.equal(nexted, true);
+  assert.equal(seenRef, 'cookie-sess');
+  assert.equal(req.qlikUser, 'DIR\\alice');
 });

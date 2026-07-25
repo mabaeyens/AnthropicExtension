@@ -133,7 +133,11 @@ The server starts at `https://localhost:3000`. Available endpoints:
 
 The Anthropic API key is held **server-side** (`ANTHROPIC_API_KEY`, never sent by the browser) and
 injected per request; any client-supplied key header is stripped. Callers are authenticated by their
-forwarded Qlik session (`x-qlik-session`).
+Qlik session, which the proxy validates against QPS. In the **same-site deployment** the browser
+sends the Qlik session **cookie** automatically (the extension calls with `credentials: 'include'`);
+the proxy reads it from the `X-Qlik-Session` cookie — for a **named virtual proxy** set
+`QLIK_SESSION_COOKIE=X-Qlik-Session-<prefix>`. The `x-qlik-session` **header** remains an explicit
+override for deployments that mint a session ticket the extension can read.
 The `/api/ollama` route needs **no** API key; it requires a running local [Ollama](https://ollama.com)
 server (e.g. `ollama pull ministral-3:8b`). Local inference is slower than the hosted API, so this
 route uses a 5-minute timeout.

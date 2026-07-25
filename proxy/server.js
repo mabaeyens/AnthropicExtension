@@ -113,6 +113,9 @@ const app = createApp({
   }),
   isReady,
   bodyLimit: process.env.BODY_LIMIT || '1mb',
+  // Same-site session cookie name. Default virtual proxy = X-Qlik-Session; a named
+  // virtual proxy uses X-Qlik-Session-<prefix> (set QLIK_SESSION_COOKIE).
+  sessionCookie: process.env.QLIK_SESSION_COOKIE || undefined,
 });
 
 const server = https.createServer(options, app);

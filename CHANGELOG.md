@@ -30,8 +30,11 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 - **Credential custody (P01):** the proxy holds the Anthropic key server-side (from env), strips any
   client-supplied key header, and injects the key itself. `js/security.js` and the bundled CryptoJS
   are deleted from the extension.
-- **Caller authentication (P02):** the proxy validates the forwarded Qlik session (mutual-TLS to the
-  Qlik Proxy/Repository API) before any upstream call; the extension forwards the session credential.
+- **Caller authentication (P02):** the proxy validates the caller's Qlik session (mutual-TLS to the
+  Qlik Proxy/Repository API) before any upstream call. In the same-site deployment the browser sends
+  the Qlik session **cookie** automatically (extension calls with `credentials: 'include'`); the
+  proxy reads it from `X-Qlik-Session` (a named virtual proxy uses `X-Qlik-Session-<prefix>`, set via
+  `QLIK_SESSION_COOKIE`). The `x-qlik-session` header stays as an explicit ticket override.
 - **Input validation & model allowlist (P04):** per-route body-schema validation, request-size caps,
   and a server-side model allowlist — invalid/oversize/disallowed requests are rejected before the
   upstream call.

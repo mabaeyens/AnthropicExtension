@@ -36,6 +36,7 @@ function createApp({
   rateLimiter,
   isReady = () => true,
   bodyLimit = '1mb',
+  sessionCookie,
   callUpstream = realCallUpstream,
 }) {
   const app = express();
@@ -67,8 +68,11 @@ function createApp({
   // Health / readiness / metrics (open — no auth, no upstream).
   app.use(createHealthRouter({ isReady, limiter, metrics }));
 
-  // Authenticate the Qlik session for every /api/* request (P02).
-  app.use('/api', authenticate(validate));
+  // Authenticate the Qlik session for every /api/* request (P02). The session is read
+  // from the same-site session cookie (default virtual proxy → `X-Qlik-Session`), with
+  // the `x-qlik-session` header as an explicit override; `sessionCookie` names the cookie
+  // for a NAMED virtual proxy (`X-Qlik-Session-<prefix>`).
+  app.use('/api', authenticate(validate, { cookieName: sessionCookie }));
 
   const validation = { allowlist, maxTokensCap, logger };
 
