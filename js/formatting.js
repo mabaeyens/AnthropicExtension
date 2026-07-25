@@ -1,6 +1,17 @@
 define(['./lib/marked.min', './lib/dompurify.min'], function(marked, DOMPurify) {
   'use strict';
 
+  // ── Output-sanitization invariant (E04) ──────────────────────────────────────
+  // Every path that puts model output, error text, or any non-static string into the
+  // DOM MUST go through one of:
+  //   • formatResponseText() → DOMPurify (fails CLOSED — escapes if DOMPurify absent)
+  //     for intended markdown/HTML from the model;
+  //   • esc()/escapeHtml() for plain dynamic strings (errors, chart titles, model
+  //     names, cell values, ids);
+  //   • jQuery .text() / element.textContent for incremental stream deltas.
+  // No `.html()`/`.append(htmlString)` sink may receive unsanitized dynamic content.
+  // Audited across js/ for E04 — all sinks conform.
+
   // Configure the bundled Markdown parser once. gfm enables tables/strikethrough;
   // breaks turns single newlines into <br> (Claude often relies on them).
   if (marked && typeof marked.setOptions === 'function') {
