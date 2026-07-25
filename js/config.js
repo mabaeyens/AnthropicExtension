@@ -21,8 +21,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.5.0',
-    BUILD: 34,
+    VERSION: '0.5.1',
+    BUILD: 35,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -69,7 +69,12 @@ define([], function() {
         LABEL: 'Ministral 3 8B (local)',
         // Client-side request timeout for local calls (ms). Much larger than the hosted
         // API's TIMEOUT: cold model load (~20s) plus generation at a few tok/s can run long.
-        TIMEOUT: 300000
+        TIMEOUT: 300000,
+        // Local models (Ministral/Mistral) are verbose by default and, at a few tok/s,
+        // an over-long answer can generate for minutes. This is appended to the system
+        // prompt on LOCAL calls only, to force brevity. Hosted models already follow the
+        // base "Be concise" instruction well, so they don't get this. Set to '' to disable.
+        SYSTEM_SUFFIX: 'IMPORTANT: Be extremely concise. Answer with at most 5 short bullet points or 3 short sentences. Do not restate the question, and add no preamble, disclaimers, or closing summary. Stop as soon as the question is answered.'
       },
       MAX_TOKENS: 4000,
       SYSTEM_PROMPT: 'You are a business analyst and expert Qlik Sense user. Be concise. Always aggregate the data and show absolute values and percentages. Focus on insights that would help business decision making. Present your analysis in a structured format with bullet points for key findings.',

@@ -1,8 +1,8 @@
 {
   "name": "Anthropic AI Assistant",
-  "description": "v0.5.0 build 34 — Analyze the selected Qlik Sense chart with Claude, or with a local Ministral model via Ollama. Proxy-only: requests go through the hardened proxy, which holds the API key server-side and authenticates the Qlik session — the browser holds no key. Set the Proxy URL in the extension settings.",
+  "description": "v0.5.1 build 35 — Analyze the selected Qlik Sense chart with Claude, or with a local Ministral model via Ollama. Proxy-only: requests go through the hardened proxy, which holds the API key server-side and authenticates the Qlik session — the browser holds no key. Set the Proxy URL in the extension settings.",
   "type": "visualization",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": "mabaeyens",
   "icon": "extension",
   "preview": "icon.png",

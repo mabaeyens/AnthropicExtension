@@ -107,12 +107,16 @@ define(['jquery', './config', './data-format', './log'], function($, config, dat
       let payload;
       if (local) {
         // OpenAI chat-completions shape (Ollama /v1/chat/completions): system is the
-        // first message, not a top-level field.
+        // first message, not a top-level field. Local models are verbose, so reinforce
+        // brevity with the configured suffix (config.API.LOCAL.SYSTEM_SUFFIX).
+        var localSystem = (config.API.LOCAL && config.API.LOCAL.SYSTEM_SUFFIX)
+          ? systemPrompt + '\n\n' + config.API.LOCAL.SYSTEM_SUFFIX
+          : systemPrompt;
         payload = {
           model: this.localTag(),
           max_tokens: config.API.MAX_TOKENS,
           stream: !!stream,
-          messages: [{ role: "system", content: systemPrompt }].concat(priorTurns).concat([thisTurn])
+          messages: [{ role: "system", content: localSystem }].concat(priorTurns).concat([thisTurn])
         };
       } else {
         // Anthropic Messages shape: system is a top-level field.

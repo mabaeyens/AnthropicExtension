@@ -521,6 +521,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           self.startNewChat();
         });
 
+        // Stop button — abort the in-flight response (shown only while busy).
+        $container.find('#anthropic-stop').on('click', function() {
+          self.stopActiveRequest();
+        });
+
         // Delegated Copy button — copies the raw markdown of an assistant reply.
         $container.find('#anthropic-conversation').on('click', '.chat-copy-btn', function() {
           var $btn = $(this);
@@ -963,6 +968,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         if ($container) {
           $container.find('#submit-to-anthropic, #suggest-chart-button')
             .prop('disabled', true).addClass('is-busy');
+          // Reveal the Stop button so the user can abort a long/local response.
+          $container.find('#anthropic-stop').show();
         }
         return true;
       },
@@ -976,6 +983,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         if ($container) {
           $container.find('#submit-to-anthropic, #suggest-chart-button')
             .prop('disabled', false).removeClass('is-busy');
+          $container.find('#anthropic-stop').hide();
         }
       },
 
@@ -983,6 +991,27 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       abortActiveRequest: function() {
         if (activeRequest) { try { activeRequest.abort(); } catch (e) {} }
         this.endBusy();
+      },
+
+      // User-initiated Stop (the "Stop" button). Aborts the in-flight request and
+      // finalizes the on-screen message. A user abort fires NO api callback (both the
+      // stream and buffered paths return early when aborted), so the DOM is tidied here:
+      // the streaming cursor is removed and the message is marked as stopped. Any partial
+      // streamed text is kept but is NOT pushed into conversation history (the turn was
+      // interrupted). Useful above all for local models, which can generate for minutes.
+      stopActiveRequest: function() {
+        if (!busy && !activeRequest) return;
+        this.abortActiveRequest();
+        if (!$container) return;
+        var $last = $container.find('#anthropic-conversation .chat-msg').last();
+        if (!$last.length) return;
+        $last.find('.chat-cursor').remove();
+        if ($last.hasClass('thinking')) {
+          // Nothing streamed yet (buffered path, or first token hadn't arrived).
+          this.replaceThinking($last, '<div class="anthropic-stopped-note">Stopped.</div>');
+        } else if (!$last.find('.anthropic-stopped-note').length) {
+          $last.append('<div class="anthropic-stopped-note">Stopped.</div>');
+        }
       },
 
       // Full teardown (E03): release everything this widget added so nothing outlives

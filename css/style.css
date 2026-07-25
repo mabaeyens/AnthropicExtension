@@ -406,6 +406,27 @@
   pointer-events: none;
 }
 
+/* Stop button — shown only while a request is in flight (beginBusy/endBusy toggle
+   its visibility). Red to read as an interrupt; overrides the shared .is-busy dimming. */
+#anthropic-stop {
+  padding: 2px 8px;
+  background-color: #d64545;
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+#anthropic-stop:hover { background-color: #b83232; }
+
+/* A stopped/interrupted response marker appended to the chat message. */
+.anthropic-stopped-note {
+  margin-top: 4px;
+  font-size: 11px;
+  font-style: italic;
+  color: #999;
+}
+
 .selection-active {
   background-color: #f39c12 !important;
 }

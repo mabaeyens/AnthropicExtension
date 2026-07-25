@@ -10,6 +10,23 @@ All notable changes to this extension are documented here.
 > review what leaves your environment before use. Selecting a **local model** (Ministral via
 > Ollama) keeps inference on-machine.
 
+## [0.5.1] - 2026-07-25
+
+### Added
+
+- **Stop button.** A red “Stop” button appears in the panel while a response is generating and
+  aborts it immediately, keeping any text produced so far and marking the message as stopped. It
+  reuses the existing abort handle (streamed and buffered paths alike) — most useful for local
+  models, which can generate for minutes.
+
+### Changed
+
+- **Concise local-model answers.** Local models (Ministral/Mistral) tend to be verbose and, at a
+  few tokens/second, an over-long answer can run for minutes. A brevity instruction
+  (`config.API.LOCAL.SYSTEM_SUFFIX`) is now appended to the system prompt on local calls only,
+  telling the model to answer in a few bullets/sentences with no preamble or summary. Hosted models
+  are unchanged.
+
 ## [0.5.0] - 2026-07-25
 
 Production-hardening release. Turns the demo-grade extension + `cm-llm-proxy` into a hardened,

@@ -90,6 +90,9 @@ define([], function() {
           </div>
           <div class="submit-area">
             <button id="submit-to-anthropic" class="lui-button">Submit</button>
+            <!-- Shown only while a request is in flight (see beginBusy/endBusy); aborts it.
+                 Handy for local models (Ollama), which can generate for minutes. -->
+            <button id="anthropic-stop" class="lui-button anthropic-stop-button" style="display:none;" title="Stop the current response">Stop</button>
             <button id="suggest-chart-button" class="lui-button" title="Ask the AI to propose a Qlik chart and preview it">Suggest a chart</button>
             <!-- Model picker: button + drop-up menu, populated by renderModelPicker() -->
             <div class="model-picker">
