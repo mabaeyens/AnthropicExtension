@@ -953,6 +953,29 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         this.endBusy();
       },
 
+      // Full teardown (E03): release everything this widget added so nothing outlives
+      // it across sheet navigation. Idempotent and safe to call before init or twice —
+      // every step guards on presence — so paint churn / a missing destroy hook can't
+      // throw. Called from the extension's `destroy` hook (main.js).
+      teardown: function() {
+        // 1. Abort any in-flight request (E02 handle) so it can't write into DOM that
+        //    is about to be removed.
+        try { this.abortActiveRequest(); } catch (e) {}
+        // 2. Close preview vizzes + release their engine session objects.
+        try { chartBuilder.closeAllPreviews(); } catch (e) {}
+        // 3. Stop selection tracking (removes the capture-phase document click
+        //    listener) and drop the cached context.
+        try { dataCollector.teardown(); } catch (e) {}
+        // 4. Remove every global document listener this widget attached.
+        $(document).off('click.anthropicModel');
+        $(document).off('mousemove.anthropicDrag mouseup.anthropicDrag');
+        // 5. Reset transient UI state and remove the injected widget node so a fresh
+        //    paint() re-initialises cleanly with no duplicate widget or listeners.
+        selectionModeActive = false;
+        $('#anthropic-floating-widget').remove();
+        $container = null;
+      },
+
       startNewChat: function() {
         // Drop any in-flight request first — its DOM target is about to vanish.
         this.abortActiveRequest();

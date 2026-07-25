@@ -121,6 +121,18 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     },
 
     /**
+     * Teardown (E03): release everything this module holds so nothing outlives the
+     * widget. Removes the capture-phase selection listener and drops the cached app
+     * context (the per-fetch session objects are created-read-destroyed inline, so
+     * none are long-lived). Idempotent — safe before init or twice.
+     */
+    teardown: function() {
+      try { this.stopSelectionTracking(); } catch (e) {}
+      this._appContextCache = null;
+      this._appContextPromise = null;
+    },
+
+    /**
      * Add styles for selection mode
      */
     addSelectionStyles: function() {

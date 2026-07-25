@@ -131,6 +131,15 @@ define([
 
       return qlik.Promise.resolve();
     },
+    // Teardown hook (E03): Qlik calls this when the object is removed from the sheet
+    // or the sheet is torn down. Release all global listeners, preview vizzes, session
+    // objects, and any in-flight request so nothing accumulates across sheet navigation.
+    // Idempotent (each step guards on presence), so a paint/destroy race can't throw.
+    destroy: function () {
+      try { uiController.teardown(); } catch (e) {
+        console.warn("[DEBUG] teardown error (ignored):", e && e.message);
+      }
+    },
     controller: ['$scope', function ($scope) {
       // Controller logic here
       console.log("AnthropicExtension controller initialized");
