@@ -29,7 +29,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [20, 22]
+        # node 22 only: the `test` script relies on node's own test-runner glob
+        # (`node --test "test/**/*.test.js"`), which is deterministic across shells but
+        # was added in node 21 — node 20 treats the pattern as a literal path. The
+        # extension is pure ES5/AMD run through a vm shim, so single-version coverage is
+        # sufficient; the proxy CI still exercises node 20 + 22.
+        node: [22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
