@@ -3,6 +3,17 @@
 Qlik Sense visualization extension that analyses chart data using a Large Language Model (Claude, via
 the Anthropic API) and can suggest and create Qlik charts from the model's responses.
 
+> ## 🔒 Hardened branch (`harden/e01-proxy-only`)
+>
+> On this branch the extension is **proxy-only** (spec E01): the browser holds **no API key** and
+> **never** calls `api.anthropic.com` directly. Every request goes to the **hardened proxy** under
+> [`proxy/`](./proxy), which holds the Anthropic key server-side (P01) and authenticates the caller by
+> their **Qlik session** (P02, forwarded as a credentialed cookie). `security.js`, the bundled
+> CryptoJS, the direct-browser transport, and the **API-key property are removed**. Configure a
+> **Proxy URL** (and, for local models, a **Local model URL**) pointing at your deployed proxy.
+> The sections below still describe the `main` (v0.4.0) direct-browser demo — they do **not** apply to
+> this branch's transport.
+
 > ## ⚠️ Demo only — no warranty, no liability
 >
 > This is an **experimental demonstration asset (v0.4.0)**, not a product. It is **not** hardened for

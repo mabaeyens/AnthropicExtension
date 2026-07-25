@@ -4,13 +4,10 @@ define([
   './anthropic-api',
   './data-collector',
   './ui-controller',
-  './security',
   './config',
+  './config-validate',
   'css!../css/style.css'
-], function ($, qlik, anthropicAPI, dataCollector, uiController, security, config) {
-  
-  // Access debug mode from config
-  const DEBUG_MODE = config.DEBUG_MODE;
+], function ($, qlik, anthropicAPI, dataCollector, uiController, config, configValidate) {
   'use strict';
 
   return {
@@ -39,16 +36,6 @@ define([
                 // ellipsis — it never wraps them. So every label stays short and
                 // the explanation goes in a `text` component below the field,
                 // which does wrap.
-                apiKey: {
-                  ref: "props.apiKey",
-                  label: "API key",
-                  type: "string",
-                  expression: "optional"
-                },
-                apiKeyHelp: {
-                  component: "text",
-                  label: "Stored encrypted in this browser. Leave blank to remove the stored key. Not needed for local models."
-                },
                 model: {
                   ref: "props.model",
                   label: "Default model",
@@ -74,7 +61,7 @@ define([
                 },
                 proxyUrlHelp: {
                   component: "text",
-                  label: "Optional. Leave blank to call the Anthropic API directly from the browser."
+                  label: "Required. The hardened proxy holds the API key and authenticates your Qlik session — e.g. https://your-qlik-host:3000/api/anthropic. Leave blank to use the config.js default."
                 },
                 localUrl: {
                   ref: "props.localUrl",
@@ -109,7 +96,11 @@ define([
           config.API.MODEL = layout.props.model;
           uiController.renderModelPicker();
         }
-        config.API.PROXY_URL = layout.props.proxyUrl || '';
+        // Proxy endpoint for hosted models (mandatory — E01). Only override the default
+        // when the property is set, so a blank field keeps the config.js default.
+        if (layout.props.proxyUrl) {
+          config.API.PROXY_URL = layout.props.proxyUrl;
+        }
 
         // Local-model endpoint (Ollama via HTTPS proxy). Only override the default when
         // the property is set, so a blank field keeps the config.js default.
@@ -117,21 +108,7 @@ define([
           config.API.LOCAL.URL = layout.props.localUrl;
         }
 
-        // The properties panel is the single source of truth for the API key.
-        // Sync localStorage to the property on every paint: a non-empty field
-        // sets/updates the stored key; an emptied field clears it.
-        var propKey = (layout.props.apiKey || '').trim();
-        if (propKey) {
-          if (propKey !== security.getAPIKey()) {
-            security.storeAPIKey(propKey);
-            console.log("[DEBUG] API key stored/updated from properties");
-          }
-        } else if (security.getAPIKey()) {
-          security.clearAPIKey();
-          console.log("[DEBUG] API key cleared (properties field emptied)");
-        }
-
-        // Keep the panel's status line in sync with the property change.
+        // Keep the panel's connection status line in sync with the property change.
         uiController.renderApiKeyStatus();
       }
 
@@ -142,6 +119,18 @@ define([
       if (!document.getElementById('anthropic-floating-widget')) {
         uiController.initUI($element, layout);
 
+        // Validate config once at init (E07). Non-fatal: a problem is surfaced in the
+        // panel (naming the offending key) rather than throwing and wedging the render.
+        try {
+          var vr = configValidate.validate(config);
+          if (!vr.ok) {
+            console.error('[config] invalid configuration:', vr.errors);
+            uiController.showConfigError(vr.errors);
+          }
+        } catch (e) {
+          console.warn('[config] validation error (ignored):', e && e.message);
+        }
+
         const app = qlik.currApp();
         dataCollector.init(app, layout.qInfo.qId);
         dataCollector.setupSelectionTracking(function (objectId, objectData) {
@@ -151,6 +140,15 @@ define([
       }
 
       return qlik.Promise.resolve();
+    },
+    // Teardown hook (E03): Qlik calls this when the object is removed from the sheet
+    // or the sheet is torn down. Release all global listeners, preview vizzes, session
+    // objects, and any in-flight request so nothing accumulates across sheet navigation.
+    // Idempotent (each step guards on presence), so a paint/destroy race can't throw.
+    destroy: function () {
+      try { uiController.teardown(); } catch (e) {
+        console.warn("[DEBUG] teardown error (ignored):", e && e.message);
+      }
     },
     controller: ['$scope', function ($scope) {
       // Controller logic here

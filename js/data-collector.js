@@ -121,6 +121,18 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     },
 
     /**
+     * Teardown (E03): release everything this module holds so nothing outlives the
+     * widget. Removes the capture-phase selection listener and drops the cached app
+     * context (the per-fetch session objects are created-read-destroyed inline, so
+     * none are long-lived). Idempotent — safe before init or twice.
+     */
+    teardown: function() {
+      try { this.stopSelectionTracking(); } catch (e) {}
+      this._appContextCache = null;
+      this._appContextPromise = null;
+    },
+
+    /**
      * Add styles for selection mode
      */
     addSelectionStyles: function() {
@@ -1147,7 +1159,8 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           // HARD CAP: never fetch more than MAX_FETCH_CELLS cells. A wide/tall table
           // would otherwise spawn thousands of concurrent requests and freeze the tab.
           // Beyond the cap we truncate and flag it so the UI can warn the user.
-          const MAX_CELLS_PER_PAGE = 10000;
+          // All bounds come from config.DATA (validated at init, E05) — no magic numbers.
+          const MAX_CELLS_PER_PAGE = (config.DATA && config.DATA.MAX_CELLS_PER_PAGE) || 10000;
           const maxCells = (config.DATA && config.DATA.MAX_FETCH_CELLS) || 50000;
           const concurrency = (config.DATA && config.DATA.FETCH_PAGE_CONCURRENCY) || 4;
           const maxRows = Math.max(1, Math.min(qHeight, Math.floor(maxCells / qWidth)));
@@ -1220,7 +1233,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         console.log("[DEBUG] Setting current app from qlik.currApp()");
       }
 
-      var MAX_FIELDS = 500; // soft cap to bound token usage on huge models
+      var MAX_FIELDS = (config.DATA && config.DATA.MAX_FIELDS) || 500; // soft cap to bound token usage
       var doc = currentApp.model && currentApp.model.enigmaModel;
 
       var appContext = {
@@ -1318,7 +1331,13 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             if (name && !seen[name]) { seen[name] = true; flat.push(name); }
           });
         }
-        if (flat.length > MAX_FIELDS) flat = flat.slice(0, MAX_FIELDS);
+        // Bound the field list (E05 §4.5). Deterministic: same fields in → same kept
+        // slice + same notice. The flag mirrors the row-truncation notice.
+        if (flat.length > MAX_FIELDS) {
+          appContext.fieldsTruncated = { kept: MAX_FIELDS, total: flat.length };
+          console.warn("[DEBUG] Field list truncated to", MAX_FIELDS, "of", flat.length, "fields");
+          flat = flat.slice(0, MAX_FIELDS);
+        }
         appContext.fields = flat.map(function(name) { return { name: name }; });
         delete appContext._sessionFields;
 
@@ -1334,20 +1353,34 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     // once per session so the data-model structure is sent to the LLM on first
     // use without re-evaluating the engine on every request.
     _appContextCache: null,
+    _appContextPromise: null,
 
     /**
      * Get the app context, collected once per session and cached thereafter.
+     *
+     * Race-safe (E02 §4.5): memoizes the in-flight PROMISE, not just the resolved
+     * value, so two callers that fire before the first resolves await the SAME build
+     * and only one session object / engine load happens. On rejection the memo is
+     * cleared so a later call can rebuild.
      * @returns {Promise} Promise resolving to the app context object
      */
     getAppContextCached: function() {
       if (this._appContextCache) {
         return Promise.resolve(this._appContextCache);
       }
+      if (this._appContextPromise) {
+        return this._appContextPromise;
+      }
       const self = this;
-      return this.getAppContext().then(function(context) {
+      this._appContextPromise = this.getAppContext().then(function(context) {
         self._appContextCache = context;
+        self._appContextPromise = null;
         return context;
+      }, function(err) {
+        self._appContextPromise = null;   // let a later call retry
+        throw err;
       });
+      return this._appContextPromise;
     },
 
     /**

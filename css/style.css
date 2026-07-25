@@ -395,6 +395,17 @@
   background-color: #007a38;
 }
 
+/* Single-flight busy state (E02): while a request is in flight the trigger buttons
+   are disabled and dimmed so a second click is visibly a no-op. */
+#submit-to-anthropic.is-busy,
+#suggest-chart-button.is-busy,
+#submit-to-anthropic:disabled,
+#suggest-chart-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+  pointer-events: none;
+}
+
 .selection-active {
   background-color: #f39c12 !important;
 }

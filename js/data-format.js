@@ -116,7 +116,7 @@ define([], function() {
       }
       
       // Calculate column widths for nice formatting
-      const colWidths = [];
+      let colWidths = [];
       
       // Initialize with header widths
       if (headers) {

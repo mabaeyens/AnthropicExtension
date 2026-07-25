@@ -17,6 +17,15 @@ $zipPath = Join-Path $PSScriptRoot $zipName
 $configText = Get-Content (Join-Path $PSScriptRoot "js/config.js") -Raw
 $build = if ($configText -match 'BUILD:\s*(\d+)') { $matches[1] } else { '0' }
 
+# Version-match guard (E07 §4.3): config.js VERSION is the single source of truth and
+# must equal the .qext version, or a forgotten bump ships a mislabelled zip. Fail loudly.
+$cfgVersion = if ($configText -match "VERSION:\s*'([^']+)'") { $matches[1] } else { $null }
+if ($cfgVersion -ne $version) {
+  Write-Error "Version mismatch: js/config.js VERSION ('$cfgVersion') != AnthropicExtension.qext version ('$version'). Bump both before packaging."
+  exit 1
+}
+Write-Host "Version check OK: config.js and .qext both at v$version"
+
 $qextPath = Join-Path $PSScriptRoot "AnthropicExtension.qext"
 $qextRaw  = [System.IO.File]::ReadAllText($qextPath)
 # The em dash is built from its code point on BOTH sides: a literal — in this

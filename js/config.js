@@ -6,7 +6,7 @@ define([], function() {
    * 
    * For production use:
    * - Set DEBUG_MODE to false
-   * - Update the API.URL to point to your production endpoint
+   * - Point API.PROXY_URL / API.LOCAL.URL at your deployed hardened proxy
    * - Adjust the MODEL as needed for your use case
    */
   return {
@@ -23,14 +23,11 @@ define([], function() {
 
     // API Configuration
     API: {
-      // Direct Anthropic endpoint, called from the browser. Used when PROXY_URL is empty.
-      URL: 'https://api.anthropic.com/v1/messages',
-      // Optional local proxy URL. When non-empty, requests are routed here instead
-      // of calling api.anthropic.com directly (and the direct-browser headers are omitted).
-      // Overridden per-instance from the extension's "Proxy URL" property.
-      PROXY_URL: '',
-      // Anthropic API version header, required for direct browser calls.
-      VERSION: '2023-06-01',
+      // Proxy route for hosted (Anthropic) models. The proxy is MANDATORY (E01): the
+      // browser never holds the API key and never calls api.anthropic.com directly —
+      // the proxy holds the key server-side (P01) and authenticates the caller by their
+      // Qlik session (P02). Overridden per-instance from the "Proxy URL" property.
+      PROXY_URL: 'https://localhost:3000/api/anthropic',
       // Active model. Seeded from the extension's "Model" property, then owned by
       // the in-panel model picker for the rest of the session (see MODEL_LOCKED).
       MODEL: 'claude-haiku-4-5',
@@ -94,10 +91,19 @@ define([], function() {
       // a wide/tall table from spawning thousands of concurrent engine requests
       // (which would freeze the tab). Data beyond this is truncated with a notice.
       MAX_FETCH_CELLS: 50000,
+      // Cells fetched per getHyperCubeData page request (page height = this / width).
+      MAX_CELLS_PER_PAGE: 10000,
       // Above this cell count the user is told the table was truncated.
       LARGE_TABLE_CELLS: 25000,
       // Max concurrent getHyperCubeData page requests.
       FETCH_PAGE_CONCURRENCY: 4,
+      // Soft cap on the app-level field list sent as context (bounds token usage).
+      MAX_FIELDS: 500,
+      // Client-side egress-size thresholds (bytes). WARN prompts a confirm; MAX is a
+      // hard client-side block reconciled with the proxy BODY_LIMIT (P04, default 1 MB)
+      // so a request the server would 413 is caught here first with a friendlier message.
+      WARN_PAYLOAD_BYTES: 66560,     // 65 * 1024
+      MAX_PAYLOAD_BYTES: 1048576,    // 1 MB — matches the proxy BODY_LIMIT default
       DEFAULT_OPTIMIZATION: {
         maxRows: 1000,
         includeNumericValues: true,
@@ -122,6 +128,35 @@ define([], function() {
     FEATURES: {
       EXTRACT_CITY_VALUES: false,  // Disable city-value extraction (not working with maps)
       SHOW_DEBUG_AREA: false       // Show debug area in UI when DEBUG_MODE is true
+    },
+
+    // Validate the data-collection bounds at init (E05 §4.2). Any invalid value falls
+    // back to a documented safe default with a console warning — NEVER to unbounded
+    // behaviour. Called once from main.js paint init; safe to call more than once.
+    validateData: function() {
+      var D = this.DATA || (this.DATA = {});
+      var DEFAULTS = {
+        MAX_ROWS: 1000, MAX_FETCH_CELLS: 50000, MAX_CELLS_PER_PAGE: 10000,
+        LARGE_TABLE_CELLS: 25000, FETCH_PAGE_CONCURRENCY: 4, MAX_FIELDS: 500,
+        WARN_PAYLOAD_BYTES: 66560, MAX_PAYLOAD_BYTES: 1048576
+      };
+      function posInt(v) { return typeof v === 'number' && isFinite(v) && v > 0 && Math.floor(v) === v; }
+      Object.keys(DEFAULTS).forEach(function(k) {
+        if (!posInt(D[k])) {
+          console.warn('[config] DATA.' + k + ' invalid (' + D[k] + '); using default ' + DEFAULTS[k]);
+          D[k] = DEFAULTS[k];
+        }
+      });
+      // Range + relational sanity so no path can fan out unbounded engine requests.
+      if (D.FETCH_PAGE_CONCURRENCY > 16) {
+        console.warn('[config] DATA.FETCH_PAGE_CONCURRENCY too high (' + D.FETCH_PAGE_CONCURRENCY + '); clamping to 16');
+        D.FETCH_PAGE_CONCURRENCY = 16;
+      }
+      if (D.MAX_FETCH_CELLS < D.MAX_CELLS_PER_PAGE) {
+        console.warn('[config] DATA.MAX_FETCH_CELLS < MAX_CELLS_PER_PAGE; raising to MAX_CELLS_PER_PAGE');
+        D.MAX_FETCH_CELLS = D.MAX_CELLS_PER_PAGE;
+      }
+      return D;
     }
   };
 });

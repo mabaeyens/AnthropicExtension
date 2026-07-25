@@ -1,5 +1,5 @@
-define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', './formatting', './config', './template', './chart-builder'],
-  function ($, qlik, anthropicAPI, dataCollector, security, formatting, config, template, chartBuilder) {
+define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting', './config', './template', './chart-builder'],
+  function ($, qlik, anthropicAPI, dataCollector, formatting, config, template, chartBuilder) {
     'use strict';
 
     let $container = null;
@@ -18,18 +18,21 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
     let contextSent = false;
     let lastChartSignature = null;
 
-    // Handle for an in-flight streamed answer ({ abort }). Aborted when the user
-    // starts a new chat or switches model, so a dead stream can't keep writing
-    // into DOM that has been thrown away.
-    let activeStream = null;
+    // Handle for the single in-flight request ({ abort }) — buffered OR streamed
+    // (E02). At most one request per widget instance is in flight; it is aborted on
+    // new chat, model switch, and teardown so a dead request can't write into DOM
+    // that has been thrown away. `busy` is the single-flight guard: while true,
+    // Submit and Suggest a chart are disabled and any further trigger is a no-op.
+    let activeRequest = null;
+    let busy = false;
 
     // The wrapper for the exchange currently being rendered. Each turn (user
     // bubble + its assistant reply) is grouped in a .chat-turn that is prepended,
     // so the newest exchange sits at the top of the thread.
     let $currentTurn = null;
 
-    // Threshold above which we warn before shipping chart data to the LLM.
-    const LARGE_PAYLOAD_BYTES = 65 * 1024;
+    // Threshold above which we warn before shipping chart data to the LLM (E05).
+    const LARGE_PAYLOAD_BYTES = (config.DATA && config.DATA.WARN_PAYLOAD_BYTES) || 65 * 1024;
 
     // If the chart data about to be sent exceeds the size threshold, ask the
     // user to confirm (large payloads mean high token cost / slow / costly
@@ -103,6 +106,19 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
     }
     // Returns { ok, chartData, truncated }. ok=false means the user cancelled.
     function guardPayload(chartDataPayload) {
+      // Hard client-side ceiling reconciled with the proxy BODY_LIMIT (E05 §4.6): a
+      // payload the server would 413 is caught HERE first, with a friendlier message.
+      var maxBytes = (config.DATA && config.DATA.MAX_PAYLOAD_BYTES) || 1048576;
+      if (chartDataPayload) {
+        var payloadBytes = 0;
+        try { payloadBytes = JSON.stringify(chartDataPayload).length; } catch (e) { payloadBytes = 0; }
+        if (payloadBytes > maxBytes) {
+          window.alert('The selected chart data is about ' + Math.round(payloadBytes / 1024) +
+            ' KB, which exceeds the ' + Math.round(maxBytes / 1024) + ' KB the proxy accepts.\n\n' +
+            'Filter the data with selections (or select fewer charts) and try again.');
+          return { ok: false };
+        }
+      }
       var budget = inputBudget();
       var est = estimateTokens(chartDataPayload);
       if (est > budget) {
@@ -355,24 +371,22 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         });
       },
 
-      // Render the api-key status line. Key management lives entirely in the
-      // properties panel, so this is read-only: a "stored" badge or a notice.
-      // Safe to call from paint() — no-ops until the widget is initialized.
+      // Render the connection status line. The browser holds no API key any more
+      // (E01) — the proxy holds it and authenticates the Qlik session. So this now
+      // only warns when the required proxy URL is not configured. Kept under the
+      // old name/#area to avoid churn in call sites. Safe to call from paint().
       renderApiKeyStatus: function() {
         if (!$container) return;
         var $area = $container.find('#api-key-status-area');
         if (!$area.length) return;
 
-        // Local (Ollama) models need no key, so the notice would be noise. It
-        // reappears the moment the picker switches back to a hosted model.
-        if (anthropicAPI.isLocalModel() || security.getAPIKey()) {
-          // Key is managed authoritatively in Edit object → Settings; nothing to
-          // show in the panel when one is stored.
+        var url = anthropicAPI.isLocalModel() ? config.API.LOCAL.URL : config.API.PROXY_URL;
+        if (url) {
           $area.empty();
         } else {
           $area.html(
             '<div class="api-key-notice">' +
-            'No API key stored. Enter it in <strong>Edit object &#8594; Settings</strong>.' +
+            'No proxy URL configured. Set it in <strong>Edit object &#8594; Settings</strong>.' +
             '</div>'
           );
         }
@@ -525,6 +539,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
 
         // Submit button
         $container.find('#submit-to-anthropic').on('click', function() {
+          // Single-flight: ignore a click while a request is already in flight (E02).
+          if (busy) return;
           var userPrompt = $container.find('#anthropic-prompt').val();
           if (!userPrompt || !userPrompt.trim()) {
             self.appendSystemNote(formatting.formatErrorMessage('Please enter a question or prompt.'));
@@ -576,14 +592,23 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             history:      boundedHistory()
           };
 
+          // Enter the busy state for the whole request (incl. async context build).
+          self.beginBusy();
+
           // App context only on the first turn (subsequent turns inherit it via history)
           var includeContext = $container.find('#include-context').is(':checked');
           if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
               requestData.context = context;
+              if (context.fieldsTruncated) {
+                self.appendSystemNote(formatting.formatWarningMessage(
+                  'Field list truncated to ' + context.fieldsTruncated.kept + ' of ' +
+                  context.fieldsTruncated.total + ' fields to bound token usage.'));
+              }
               chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processAnthropicRequest(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
+              self.endBusy();
               self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
             });
           } else {
@@ -593,6 +618,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
 
         // Suggest a chart — ask the AI for a chart spec and preview it live.
         $container.find('#suggest-chart-button').on('click', function() {
+          // Single-flight: ignore a click while a request is already in flight (E02).
+          if (busy) return;
           var typed = $container.find('#anthropic-prompt').val();
           var app   = qlik.currApp();
           var appId = app.id;
@@ -644,13 +671,22 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             history:      boundedHistory()
           };
 
+          // Enter the busy state for the whole request (incl. async context build).
+          self.beginBusy();
+
           var includeContext = $container.find('#include-context').is(':checked');
           if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
               requestData.context = context;
+              if (context.fieldsTruncated) {
+                self.appendSystemNote(formatting.formatWarningMessage(
+                  'Field list truncated to ' + context.fieldsTruncated.kept + ' of ' +
+                  context.fieldsTruncated.total + ' fields to bound token usage.'));
+              }
               chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processChartSuggestion(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
+              self.endBusy();
               self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
             });
           } else {
@@ -709,7 +745,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           var $stream = $thinking.find('.chat-stream');
           var node = $stream[0];
 
-          activeStream = anthropicAPI.streamToAnthropic(
+          activeRequest = anthropicAPI.streamToAnthropic(
             appId,
             requestData,
             function(chunk) {
@@ -718,27 +754,39 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
               node.textContent += chunk;
             },
             function(fullText, metrics) {
-              activeStream = null;
+              self.endBusy();
               finish(fullText, metrics);
             },
             function(error) {
-              activeStream = null;
-              self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+              self.endBusy();
+              self.replaceThinking($thinking, formatting.formatErrorMessage(self.friendlyError(error)));
             }
           );
           return;
         }
 
-        anthropicAPI.sendToAnthropic(
+        activeRequest = anthropicAPI.sendToAnthropic(
           appId,
           requestData,
           function(response, metrics) {
+            self.endBusy();
             finish(anthropicAPI.formatResponse(response), metrics);
           },
           function(error) {
-            self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+            self.endBusy();
+            self.replaceThinking($thinking, formatting.formatErrorMessage(self.friendlyError(error)));
           }
         );
+      },
+
+      // Map a proxy 503 (P03 concurrency overflow) to a friendly retry message
+      // instead of a raw error (E02 §4.7); pass anything else through unchanged.
+      friendlyError: function(error) {
+        var status = error && (error.status || (error.response && error.response.status));
+        if (status === 503 || status === '503') {
+          return 'The assistant is busy right now. Please try again in a few seconds.';
+        }
+        return error;
       },
 
       // Chart-suggestion flow: same request machinery, but parse the reply as a
@@ -747,10 +795,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
       processChartSuggestion: function(appId, requestData, $thinking, chartSig) {
         var self = this;
         var modelAtSend = config.API.MODEL;
-        anthropicAPI.sendToAnthropic(
+        activeRequest = anthropicAPI.sendToAnthropic(
           appId,
           requestData,
           function(response, metrics) {
+            self.endBusy();
             var responseText = anthropicAPI.formatResponse(response);
             var spec = chartBuilder.parseChartSpec(responseText);
 
@@ -784,7 +833,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
             if (requestData.chartData) lastChartSignature = chartSig;
           },
           function(error) {
-            self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+            self.endBusy();
+            self.replaceThinking($thinking, formatting.formatErrorMessage(self.friendlyError(error)));
           }
         );
       },
@@ -879,6 +929,15 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         this.scrollConversation();
       },
 
+      // Surface config-validation problems in the panel (E07 §4.2). Non-fatal: names
+      // the offending keys so the user can fix them in Edit object → Settings.
+      showConfigError: function(errors) {
+        if (!$container || !errors || !errors.length) return;
+        this.appendSystemNote(formatting.formatErrorMessage(
+          'Configuration problem — the assistant may not work until this is fixed: ' +
+          errors.join('; ')));
+      },
+
       scrollConversation: function() {
         // Newest exchange is at the top, so keep the view pinned there.
         var el = $container.find('.anthropic-panel-body')[0];
@@ -894,9 +953,64 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
           '</div>';
       },
 
+      // ── Single-flight busy state (E02) ───────────────────────────────────────
+      // Enter the busy state and disable the trigger buttons. Returns false if a
+      // request is already in flight (caller should no-op — the click is ignored,
+      // not queued, per X02 §4.1).
+      beginBusy: function() {
+        if (busy) return false;
+        busy = true;
+        if ($container) {
+          $container.find('#submit-to-anthropic, #suggest-chart-button')
+            .prop('disabled', true).addClass('is-busy');
+        }
+        return true;
+      },
+
+      // Leave the busy state, clear the in-flight handle, and re-enable the buttons.
+      // Called on every terminal path — success, error, and abort — so the UI can
+      // never get stuck disabled (E02 §4.4).
+      endBusy: function() {
+        busy = false;
+        activeRequest = null;
+        if ($container) {
+          $container.find('#submit-to-anthropic, #suggest-chart-button')
+            .prop('disabled', false).removeClass('is-busy');
+        }
+      },
+
+      // Abort whatever request is in flight (buffered or streamed) and clear busy.
+      abortActiveRequest: function() {
+        if (activeRequest) { try { activeRequest.abort(); } catch (e) {} }
+        this.endBusy();
+      },
+
+      // Full teardown (E03): release everything this widget added so nothing outlives
+      // it across sheet navigation. Idempotent and safe to call before init or twice —
+      // every step guards on presence — so paint churn / a missing destroy hook can't
+      // throw. Called from the extension's `destroy` hook (main.js).
+      teardown: function() {
+        // 1. Abort any in-flight request (E02 handle) so it can't write into DOM that
+        //    is about to be removed.
+        try { this.abortActiveRequest(); } catch (e) {}
+        // 2. Close preview vizzes + release their engine session objects.
+        try { chartBuilder.closeAllPreviews(); } catch (e) {}
+        // 3. Stop selection tracking (removes the capture-phase document click
+        //    listener) and drop the cached context.
+        try { dataCollector.teardown(); } catch (e) {}
+        // 4. Remove every global document listener this widget attached.
+        $(document).off('click.anthropicModel');
+        $(document).off('mousemove.anthropicDrag mouseup.anthropicDrag');
+        // 5. Reset transient UI state and remove the injected widget node so a fresh
+        //    paint() re-initialises cleanly with no duplicate widget or listeners.
+        selectionModeActive = false;
+        $('#anthropic-floating-widget').remove();
+        $container = null;
+      },
+
       startNewChat: function() {
-        // Drop any in-flight stream first — its DOM target is about to vanish.
-        if (activeStream) { activeStream.abort(); activeStream = null; }
+        // Drop any in-flight request first — its DOM target is about to vanish.
+        this.abortActiveRequest();
         conversation = [];
         contextSent = false;
         lastChartSignature = null;
