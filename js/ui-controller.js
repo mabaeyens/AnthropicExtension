@@ -18,10 +18,13 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
     let contextSent = false;
     let lastChartSignature = null;
 
-    // Handle for an in-flight streamed answer ({ abort }). Aborted when the user
-    // starts a new chat or switches model, so a dead stream can't keep writing
-    // into DOM that has been thrown away.
-    let activeStream = null;
+    // Handle for the single in-flight request ({ abort }) — buffered OR streamed
+    // (E02). At most one request per widget instance is in flight; it is aborted on
+    // new chat, model switch, and teardown so a dead request can't write into DOM
+    // that has been thrown away. `busy` is the single-flight guard: while true,
+    // Submit and Suggest a chart are disabled and any further trigger is a no-op.
+    let activeRequest = null;
+    let busy = false;
 
     // The wrapper for the exchange currently being rendered. Each turn (user
     // bubble + its assistant reply) is grouped in a .chat-turn that is prepended,
@@ -523,6 +526,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
 
         // Submit button
         $container.find('#submit-to-anthropic').on('click', function() {
+          // Single-flight: ignore a click while a request is already in flight (E02).
+          if (busy) return;
           var userPrompt = $container.find('#anthropic-prompt').val();
           if (!userPrompt || !userPrompt.trim()) {
             self.appendSystemNote(formatting.formatErrorMessage('Please enter a question or prompt.'));
@@ -574,6 +579,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
             history:      boundedHistory()
           };
 
+          // Enter the busy state for the whole request (incl. async context build).
+          self.beginBusy();
+
           // App context only on the first turn (subsequent turns inherit it via history)
           var includeContext = $container.find('#include-context').is(':checked');
           if (includeContext && !contextSent) {
@@ -582,6 +590,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
               chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processAnthropicRequest(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
+              self.endBusy();
               self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
             });
           } else {
@@ -591,6 +600,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
 
         // Suggest a chart — ask the AI for a chart spec and preview it live.
         $container.find('#suggest-chart-button').on('click', function() {
+          // Single-flight: ignore a click while a request is already in flight (E02).
+          if (busy) return;
           var typed = $container.find('#anthropic-prompt').val();
           var app   = qlik.currApp();
           var appId = app.id;
@@ -642,6 +653,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
             history:      boundedHistory()
           };
 
+          // Enter the busy state for the whole request (incl. async context build).
+          self.beginBusy();
+
           var includeContext = $container.find('#include-context').is(':checked');
           if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
@@ -649,6 +663,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
               chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processChartSuggestion(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
+              self.endBusy();
               self.replaceThinking($thinking, formatting.formatErrorMessage('Error collecting app context: ' + error));
             });
           } else {
@@ -707,7 +722,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           var $stream = $thinking.find('.chat-stream');
           var node = $stream[0];
 
-          activeStream = anthropicAPI.streamToAnthropic(
+          activeRequest = anthropicAPI.streamToAnthropic(
             appId,
             requestData,
             function(chunk) {
@@ -716,27 +731,39 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
               node.textContent += chunk;
             },
             function(fullText, metrics) {
-              activeStream = null;
+              self.endBusy();
               finish(fullText, metrics);
             },
             function(error) {
-              activeStream = null;
-              self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+              self.endBusy();
+              self.replaceThinking($thinking, formatting.formatErrorMessage(self.friendlyError(error)));
             }
           );
           return;
         }
 
-        anthropicAPI.sendToAnthropic(
+        activeRequest = anthropicAPI.sendToAnthropic(
           appId,
           requestData,
           function(response, metrics) {
+            self.endBusy();
             finish(anthropicAPI.formatResponse(response), metrics);
           },
           function(error) {
-            self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+            self.endBusy();
+            self.replaceThinking($thinking, formatting.formatErrorMessage(self.friendlyError(error)));
           }
         );
+      },
+
+      // Map a proxy 503 (P03 concurrency overflow) to a friendly retry message
+      // instead of a raw error (E02 §4.7); pass anything else through unchanged.
+      friendlyError: function(error) {
+        var status = error && (error.status || (error.response && error.response.status));
+        if (status === 503 || status === '503') {
+          return 'The assistant is busy right now. Please try again in a few seconds.';
+        }
+        return error;
       },
 
       // Chart-suggestion flow: same request machinery, but parse the reply as a
@@ -745,10 +772,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       processChartSuggestion: function(appId, requestData, $thinking, chartSig) {
         var self = this;
         var modelAtSend = config.API.MODEL;
-        anthropicAPI.sendToAnthropic(
+        activeRequest = anthropicAPI.sendToAnthropic(
           appId,
           requestData,
           function(response, metrics) {
+            self.endBusy();
             var responseText = anthropicAPI.formatResponse(response);
             var spec = chartBuilder.parseChartSpec(responseText);
 
@@ -782,7 +810,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
             if (requestData.chartData) lastChartSignature = chartSig;
           },
           function(error) {
-            self.replaceThinking($thinking, formatting.formatErrorMessage(error));
+            self.endBusy();
+            self.replaceThinking($thinking, formatting.formatErrorMessage(self.friendlyError(error)));
           }
         );
       },
@@ -892,9 +921,41 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           '</div>';
       },
 
+      // ── Single-flight busy state (E02) ───────────────────────────────────────
+      // Enter the busy state and disable the trigger buttons. Returns false if a
+      // request is already in flight (caller should no-op — the click is ignored,
+      // not queued, per X02 §4.1).
+      beginBusy: function() {
+        if (busy) return false;
+        busy = true;
+        if ($container) {
+          $container.find('#submit-to-anthropic, #suggest-chart-button')
+            .prop('disabled', true).addClass('is-busy');
+        }
+        return true;
+      },
+
+      // Leave the busy state, clear the in-flight handle, and re-enable the buttons.
+      // Called on every terminal path — success, error, and abort — so the UI can
+      // never get stuck disabled (E02 §4.4).
+      endBusy: function() {
+        busy = false;
+        activeRequest = null;
+        if ($container) {
+          $container.find('#submit-to-anthropic, #suggest-chart-button')
+            .prop('disabled', false).removeClass('is-busy');
+        }
+      },
+
+      // Abort whatever request is in flight (buffered or streamed) and clear busy.
+      abortActiveRequest: function() {
+        if (activeRequest) { try { activeRequest.abort(); } catch (e) {} }
+        this.endBusy();
+      },
+
       startNewChat: function() {
-        // Drop any in-flight stream first — its DOM target is about to vanish.
-        if (activeStream) { activeStream.abort(); activeStream = null; }
+        // Drop any in-flight request first — its DOM target is about to vanish.
+        this.abortActiveRequest();
         conversation = [];
         contextSent = false;
         lastChartSignature = null;

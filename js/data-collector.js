@@ -1334,20 +1334,34 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     // once per session so the data-model structure is sent to the LLM on first
     // use without re-evaluating the engine on every request.
     _appContextCache: null,
+    _appContextPromise: null,
 
     /**
      * Get the app context, collected once per session and cached thereafter.
+     *
+     * Race-safe (E02 §4.5): memoizes the in-flight PROMISE, not just the resolved
+     * value, so two callers that fire before the first resolves await the SAME build
+     * and only one session object / engine load happens. On rejection the memo is
+     * cleared so a later call can rebuild.
      * @returns {Promise} Promise resolving to the app context object
      */
     getAppContextCached: function() {
       if (this._appContextCache) {
         return Promise.resolve(this._appContextCache);
       }
+      if (this._appContextPromise) {
+        return this._appContextPromise;
+      }
       const self = this;
-      return this.getAppContext().then(function(context) {
+      this._appContextPromise = this.getAppContext().then(function(context) {
         self._appContextCache = context;
+        self._appContextPromise = null;
         return context;
+      }, function(err) {
+        self._appContextPromise = null;   // let a later call retry
+        throw err;
       });
+      return this._appContextPromise;
     },
 
     /**

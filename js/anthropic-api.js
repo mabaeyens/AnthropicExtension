@@ -141,14 +141,21 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
     },
 
     /**
-     * Send data to Anthropic API via proxy
+     * Send data to Anthropic API via proxy (buffered).
      * @param {string} appId - The Qlik app ID
      * @param {object} data - The data to send to Anthropic
      * @param {function} successCallback - Callback for successful response
      * @param {function} errorCallback - Callback for error handling
+     * @returns {{abort: function}} handle so the caller can drop an in-flight request
+     *          (new chat, model switch, teardown) — symmetric with streamToAnthropic (E02).
      */
     sendToAnthropic: function(appId, data, successCallback, errorCallback) {
       console.log("[DEBUG] Anthropic API called with appId:", appId);
+      var jqXHR = null;
+      var aborted = false;
+      var handle = {
+        abort: function() { aborted = true; if (jqXHR) { try { jqXHR.abort(); } catch (e) {} } }
+      };
 
       try {
         let req;
@@ -156,7 +163,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
           req = this.prepareRequest(data, false);
         } catch (keyErr) {
           errorCallback(keyErr.message);
-          return;
+          return handle;
         }
         const local = req.local;
         const messageMetrics = req.metrics;
@@ -165,7 +172,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
         console.log("[DEBUG] Sending request to:", transport.url);
 
         // Make the API call
-        $.ajax({
+        jqXHR = $.ajax({
           url: transport.url,
           type: 'POST',
           headers: transport.headers,
@@ -176,15 +183,18 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
           // a small GPU), so give the local backend a much longer client-side timeout.
           timeout: local ? config.API.LOCAL.TIMEOUT : config.API.TIMEOUT,
           success: function(response) {
+            if (aborted) return;
             console.log("[DEBUG] SUCCESS: Received response from proxy");
             // Pass both response and metrics to callback
             successCallback(response, messageMetrics);
           },
           error: function(xhr, status, error) {
+            // A caller-initiated abort surfaces here as status 'abort' — not an error.
+            if (aborted || status === 'abort') return;
             console.error("[DEBUG] ERROR: Problem with proxy request:", status, error);
             errorCallback({
               message: 'Error communicating with Anthropic API: ' + error,
-              status: status,
+              status: xhr && xhr.status ? xhr.status : status,
               details: xhr.responseText || 'No response details'
             });
           }
@@ -195,6 +205,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
           message: "Exception occurred: " + e.message
         });
       }
+      return handle;
     },
 
     /**
