@@ -32,7 +32,7 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function callUpstream(opts, deps = {}) {
   const {
     url, headers, data, stream = false, timeoutMs = 60000,
-    maxRetries = 2, baseDelayMs = 300, maxDelayMs = 4000,
+    maxRetries = 2, baseDelayMs = 300, maxDelayMs = 4000, signal,
   } = opts;
   const client = deps.axios || axios;
   const sleep = deps.sleep || defaultSleep;
@@ -51,6 +51,10 @@ async function callUpstream(opts, deps = {}) {
         maxRedirects: 0,
         httpAgent,
         httpsAgent,
+        // Caller-supplied AbortSignal (client disconnect / Stop). When aborted, axios
+        // rejects with a CanceledError and the request socket is torn down, so the
+        // upstream model stops generating instead of finishing an unread response.
+        signal,
       });
     } catch (err) {
       const canRetry = !stream && attempt < maxRetries && isRetryable(err);

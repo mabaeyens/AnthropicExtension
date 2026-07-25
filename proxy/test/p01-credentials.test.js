@@ -83,6 +83,16 @@ test('callUpstream gives up after maxRetries and throws the last error', async (
   assert.equal(axios.calls.length, 3); // 1 + 2 retries, then throw
 });
 
+test('callUpstream forwards the AbortSignal to axios (client-cancel plumbing)', async () => {
+  const ac = new AbortController();
+  const axios = mockAxios([() => ({ data: { ok: true } })]);
+  await callUpstream(
+    { url: 'x', headers: {}, data: {}, stream: false, signal: ac.signal },
+    { axios, sleep: noSleep, rand: () => 0 },
+  );
+  assert.equal(axios.calls[0].signal, ac.signal);
+});
+
 test('callUpstream NEVER retries a streaming request', async () => {
   const err503 = Object.assign(new Error('stream-boom'), { response: { status: 503 } });
   const axios = mockAxios([() => { throw err503; }]);

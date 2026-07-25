@@ -84,13 +84,33 @@ function createApp({
       const model = req.body && req.body.model;
       const wantsStream = req.body && req.body.stream === true;
       logger.debug({ event: 'upstream_request', provider: provider.name, requestId: rid, model, stream: wantsStream });
+
+      // Buffered path: cancel the upstream call if the client disconnects (e.g. the Stop
+      // button aborts the fetch) so the model stops generating instead of finishing a
+      // response nobody will read. We watch `res` (not `req`): for a fully-received
+      // buffered request Node emits req's 'close' at end-of-body, whereas res 'close'
+      // fires when the connection drops before the response is finished. The streaming
+      // path handles disconnect on its own by destroying the piped stream below.
+      const ac = new AbortController();
+      const onClientClose = () => { if (!res.writableEnded) { try { ac.abort(); } catch (e) { /* noop */ } } };
+      if (!wantsStream) res.on('close', onClientClose);
+
       let response;
       try {
         const headers = buildUpstreamHeaders(provider, anthropicKey);
         response = await callUpstream({
-          url: provider.url, headers, data: req.body, stream: wantsStream, timeoutMs: provider.timeoutMs,
+          url: provider.url, headers, data: req.body, stream: wantsStream,
+          timeoutMs: provider.timeoutMs, signal: wantsStream ? undefined : ac.signal,
         });
       } catch (error) {
+        if (!wantsStream) res.removeListener('close', onClientClose);
+        // Client hung up mid-flight — not an upstream failure. The socket is already
+        // gone, so there is nothing to send back.
+        if (ac.signal.aborted) {
+          logger.debug({ event: 'client_cancelled', provider: provider.name, requestId: rid });
+          audit.record({ user: req.qlikUser, route, model, status: 499, requestId: rid });
+          return;
+        }
         const status = (error.response && error.response.status) || 502;
         logger.error({ event: 'upstream_failed', provider: provider.name, requestId: rid, status, message: error.message });
         audit.record({ user: req.qlikUser, route, model, status, requestId: rid });
@@ -114,6 +134,7 @@ function createApp({
         return;
       }
 
+      res.removeListener('close', onClientClose);
       audit.record({ user: req.qlikUser, route, model, status: 200, requestId: rid });
       res.json(response.data);
     };

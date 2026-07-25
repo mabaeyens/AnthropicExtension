@@ -17,7 +17,11 @@ All notable changes to this extension are documented here.
 - **Stop button.** A red “Stop” button appears in the panel while a response is generating and
   aborts it immediately, keeping any text produced so far and marking the message as stopped. It
   reuses the existing abort handle (streamed and buffered paths alike) — most useful for local
-  models, which can generate for minutes.
+  models, which can generate for minutes. Stop **actually halts inference**, not just the UI: the
+  browser aborts the request, and the proxy propagates the disconnect to the upstream so the model
+  stops generating (streaming destroys the piped stream; the buffered path now aborts the in-flight
+  upstream call via an `AbortSignal` wired to the response `close`, so a cancelled buffered request
+  no longer runs to completion server-side).
 
 ### Changed
 

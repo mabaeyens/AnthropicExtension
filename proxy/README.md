@@ -149,8 +149,11 @@ through **untouched** as `text/event-stream`, so the client renders tokens as th
 waiting for the whole answer — which matters most on the slow local path. Earlier versions buffered
 every response, so a client asking to stream still received the answer in one lump.
 
-If the client disconnects (closed tab, cancelled chat), the upstream request is destroyed rather than
-left generating for nobody. Non-streaming requests are unaffected.
+If the client disconnects (closed tab, cancelled chat, or the extension's **Stop** button), the
+upstream request is cancelled rather than left generating for nobody — the model actually stops. This
+holds for **both** paths: streaming destroys the piped upstream stream on disconnect, and the buffered
+path aborts the in-flight upstream call (via an `AbortSignal` wired to the response's `close`). This
+matters most on the slow local path, where an unwanted answer could otherwise run for minutes.
 
 > Headers sent on streamed responses: `Cache-Control: no-cache, no-transform` and
 > `X-Accel-Buffering: no`, so anything sitting in front of the proxy doesn't re-buffer the stream.

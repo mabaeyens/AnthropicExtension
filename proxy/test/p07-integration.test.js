@@ -174,3 +174,47 @@ test('a streaming request is piped through as text/event-stream', async () => {
     assert.match(text, /delta/);
   } finally { await s.close(); }
 });
+
+// ── client disconnect cancels the buffered upstream (Stop button) ────────────
+// When the browser aborts the fetch (the Stop button), the proxy must cancel the
+// in-flight upstream call so the model stops generating instead of finishing an
+// unread response. We hang the upstream, abort the client, and assert the signal
+// the proxy passed to callUpstream becomes aborted.
+test('aborting the client cancels the in-flight buffered upstream call', async () => {
+  let releaseHang;
+  const hang = new Promise((r) => { releaseHang = r; });
+  let capturedSignal = null;
+  const upstream = makeUpstreamStub({ impl: async (opts) => {
+    capturedSignal = opts.signal;
+    await hang;                       // stay in-flight until the test lets go
+    return { data: { ok: true } };
+  } });
+  const { app } = buildApp({ callUpstream: upstream });
+  const s = await listen(app);
+  const waitFor = async (cond) => {
+    for (let i = 0; i < 200; i += 1) {
+      if (cond()) return;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    throw new Error('condition not met in time');
+  };
+  try {
+    // Use a raw http client (not fetch) so we can destroy the socket deterministically —
+    // the browser's Stop aborts the connection, which is exactly `clientReq.destroy()`.
+    const http = require('http');
+    const u = new URL(`${s.url}/api/anthropic`);
+    const clientReq = http.request({
+      hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST', headers: good(),
+    });
+    clientReq.on('error', () => {});                 // swallow the abort ECONNRESET
+    clientReq.end(JSON.stringify(validBody));         // send the full body so the handler runs
+    await waitFor(() => capturedSignal !== null);     // upstream call is in-flight
+    assert.equal(capturedSignal.aborted, false);
+    clientReq.destroy();                              // simulate the Stop button (disconnect)
+    await waitFor(() => capturedSignal.aborted);      // proxy propagated the disconnect
+    assert.equal(capturedSignal.aborted, true);
+  } finally {
+    releaseHang();
+    await s.close();
+  }
+});
