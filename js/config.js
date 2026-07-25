@@ -6,7 +6,7 @@ define([], function() {
    * 
    * For production use:
    * - Set DEBUG_MODE to false
-   * - Update the API.URL to point to your production endpoint
+   * - Point API.PROXY_URL / API.LOCAL.URL at your deployed hardened proxy
    * - Adjust the MODEL as needed for your use case
    */
   return {
@@ -23,14 +23,11 @@ define([], function() {
 
     // API Configuration
     API: {
-      // Direct Anthropic endpoint, called from the browser. Used when PROXY_URL is empty.
-      URL: 'https://api.anthropic.com/v1/messages',
-      // Optional local proxy URL. When non-empty, requests are routed here instead
-      // of calling api.anthropic.com directly (and the direct-browser headers are omitted).
-      // Overridden per-instance from the extension's "Proxy URL" property.
-      PROXY_URL: '',
-      // Anthropic API version header, required for direct browser calls.
-      VERSION: '2023-06-01',
+      // Proxy route for hosted (Anthropic) models. The proxy is MANDATORY (E01): the
+      // browser never holds the API key and never calls api.anthropic.com directly —
+      // the proxy holds the key server-side (P01) and authenticates the caller by their
+      // Qlik session (P02). Overridden per-instance from the "Proxy URL" property.
+      PROXY_URL: 'https://localhost:3000/api/anthropic',
       // Active model. Seeded from the extension's "Model" property, then owned by
       // the in-panel model picker for the rest of the session (see MODEL_LOCKED).
       MODEL: 'claude-haiku-4-5',

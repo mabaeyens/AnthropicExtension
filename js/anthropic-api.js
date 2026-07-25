@@ -1,7 +1,22 @@
-define(['jquery', './security', './config', './data-format'], function($, security, config, dataFormat) {
+define(['jquery', './config', './data-format'], function($, config, dataFormat) {
   'use strict';
 
   return {
+    /**
+     * The caller's Qlik session reference, forwarded so the proxy can validate it
+     * (P02). The primary carrier is the session COOKIE, sent automatically because
+     * every proxy call sets credentials (withCredentials / credentials:'include')
+     * and the proxy is reached through the same Qlik site. That cookie is HttpOnly,
+     * so JS can't read it; this header is an optional explicit override for
+     * deployments that mint a session ticket/reference the extension can see
+     * (config.API.SESSION_REF). Returns '' when there is nothing extra to send —
+     * callers must omit the header entirely in that case, never send it empty.
+     * The exact ticket source is pinned during on-node testing (see spec P02 §2).
+     */
+    getSessionRef: function() {
+      return (config.API && config.API.SESSION_REF) || '';
+    },
+
     /**
      * Look up a model registry entry (config.API.MODELS) by id. Falls back to a
      * synthetic entry so an unknown id still renders and still routes to the
@@ -37,42 +52,29 @@ define(['jquery', './security', './config', './data-format'], function($, securi
     },
 
     /**
-     * Resolve the request URL and headers based on config.
-     * - Local model: route to config.API.LOCAL.URL (HTTPS proxy → Ollama). No key,
-     *   no anthropic headers — just JSON.
-     * - When config.API.PROXY_URL is set, route through the local proxy (the proxy
-     *   adds the anthropic-version header itself).
-     * - Otherwise call api.anthropic.com directly from the browser, which requires
-     *   the anthropic-version and anthropic-dangerous-direct-browser-access headers.
-     * @param {string} apiKey - The Anthropic API key
-     * @returns {{url: string, headers: object}}
+     * Resolve the request URL and headers. There is exactly ONE transport now (E01):
+     * an authenticated call to the proxy. The browser carries no API key and never
+     * calls api.anthropic.com directly.
+     * - Hosted model: route to config.API.PROXY_URL (the proxy injects the key and
+     *   the anthropic-version header itself).
+     * - Local model: route to config.API.LOCAL.URL (proxy → Ollama).
+     * The Qlik session rides along via credentials (the cookie); getSessionRef()
+     * adds an explicit header only when a ticket/reference is available.
+     * @returns {{url: string, headers: object, withCredentials: boolean}}
+     * @throws {Error} when the required proxy URL is not configured
      */
-    buildTransport: function(apiKey) {
-      if (this.isLocalModel()) {
-        return {
-          url: config.API.LOCAL.URL,
-          headers: { 'Content-Type': 'application/json' }
-        };
+    buildTransport: function() {
+      var local = this.isLocalModel();
+      var url = local ? config.API.LOCAL.URL : config.API.PROXY_URL;
+      if (!url) {
+        throw new Error(local
+          ? 'Local model URL is not configured. Set it in Edit object → Settings.'
+          : 'Proxy URL is not configured. Set it in Edit object → Settings.');
       }
-      const proxyUrl = config.API.PROXY_URL;
-      if (proxyUrl) {
-        return {
-          url: proxyUrl,
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-          }
-        };
-      }
-      return {
-        url: config.API.URL,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': config.API.VERSION,
-          'anthropic-dangerous-direct-browser-access': 'true'
-        }
-      };
+      var headers = { 'Content-Type': 'application/json' };
+      var ref = this.getSessionRef();
+      if (ref) headers['x-qlik-session'] = ref;
+      return { url: url, headers: headers, withCredentials: true };
     },
 
     /**
@@ -83,17 +85,14 @@ define(['jquery', './security', './config', './data-format'], function($, securi
      * @param {boolean} [stream] - request an incremental (SSE) response
      * @returns {{local: boolean, payload: object, payloadString: string,
      *            transport: object, metrics: object}}
-     * @throws {Error} when a hosted model is selected with no API key stored
+     * @throws {Error} when the required proxy URL is not configured
      */
     prepareRequest: function(data, stream) {
       const local = this.isLocalModel();
 
-      // Get the API key (shared across all apps). The local (Ollama) backend needs none.
-      const apiKey = security.getAPIKey();
-      if (!local && !apiKey) {
-        console.error("[DEBUG] API KEY ERROR: No API key found");
-        throw new Error('API key not found. Please enter your Anthropic API key in the settings.');
-      }
+      // Resolve the (single, proxy-only) transport up front so a missing proxy URL
+      // fails here with a clear message before we build the payload.
+      const transport = this.buildTransport();
 
       // Build this turn's user-message text (chart data + context + question).
       // buildMessageContent reads only `data`; pass an empty object as the legacy payload arg.
@@ -136,7 +135,7 @@ define(['jquery', './security', './config', './data-format'], function($, securi
         local: local,
         payload: payload,
         payloadString: payloadString,
-        transport: this.buildTransport(apiKey),
+        transport: transport,
         metrics: messageMetrics
       };
     },
@@ -170,6 +169,8 @@ define(['jquery', './security', './config', './data-format'], function($, securi
           url: transport.url,
           type: 'POST',
           headers: transport.headers,
+          // Forward the Qlik session cookie so the proxy can authenticate the caller (P02).
+          xhrFields: { withCredentials: true },
           data: payloadString,
           // Local inference is far slower than the hosted API (model load + low tok/s on
           // a small GPU), so give the local backend a much longer client-side timeout.
@@ -272,6 +273,8 @@ define(['jquery', './security', './config', './data-format'], function($, securi
         method: 'POST',
         headers: headers,
         body: req.payloadString,
+        // Forward the Qlik session cookie so the proxy can authenticate the caller (P02).
+        credentials: 'include',
         signal: controller.signal
       }).then(function(res) {
         if (!res.ok) {
@@ -727,22 +730,16 @@ define(['jquery', './security', './config', './data-format'], function($, securi
       };
 
       try {
-        // Get API key (shared across all apps). The local (Ollama) backend needs none.
-        const apiKey = security.getAPIKey();
-
-        if (!local && !apiKey) {
-          errorCallback('API key not found. Please enter your Anthropic API key in the settings.');
-          return;
-        }
-
-        // Resolve URL + headers (direct browser call, or proxy if configured)
-        const transport = this.buildTransport(apiKey);
+        // Resolve the single proxy transport (throws with a clear message if the
+        // required proxy URL is not configured). No API key in the browser (E01).
+        const transport = this.buildTransport();
 
         // Send test request
         $.ajax({
           url: transport.url,
           type: 'POST',
           headers: transport.headers,
+          xhrFields: { withCredentials: true },
           data: JSON.stringify(testPayload),
           success: function(response) {
             successCallback(response);

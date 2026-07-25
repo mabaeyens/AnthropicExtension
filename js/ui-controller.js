@@ -1,5 +1,5 @@
-define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', './formatting', './config', './template', './chart-builder'],
-  function ($, qlik, anthropicAPI, dataCollector, security, formatting, config, template, chartBuilder) {
+define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting', './config', './template', './chart-builder'],
+  function ($, qlik, anthropicAPI, dataCollector, formatting, config, template, chartBuilder) {
     'use strict';
 
     let $container = null;
@@ -355,24 +355,22 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './security', '
         });
       },
 
-      // Render the api-key status line. Key management lives entirely in the
-      // properties panel, so this is read-only: a "stored" badge or a notice.
-      // Safe to call from paint() — no-ops until the widget is initialized.
+      // Render the connection status line. The browser holds no API key any more
+      // (E01) — the proxy holds it and authenticates the Qlik session. So this now
+      // only warns when the required proxy URL is not configured. Kept under the
+      // old name/#area to avoid churn in call sites. Safe to call from paint().
       renderApiKeyStatus: function() {
         if (!$container) return;
         var $area = $container.find('#api-key-status-area');
         if (!$area.length) return;
 
-        // Local (Ollama) models need no key, so the notice would be noise. It
-        // reappears the moment the picker switches back to a hosted model.
-        if (anthropicAPI.isLocalModel() || security.getAPIKey()) {
-          // Key is managed authoritatively in Edit object → Settings; nothing to
-          // show in the panel when one is stored.
+        var url = anthropicAPI.isLocalModel() ? config.API.LOCAL.URL : config.API.PROXY_URL;
+        if (url) {
           $area.empty();
         } else {
           $area.html(
             '<div class="api-key-notice">' +
-            'No API key stored. Enter it in <strong>Edit object &#8594; Settings</strong>.' +
+            'No proxy URL configured. Set it in <strong>Edit object &#8594; Settings</strong>.' +
             '</div>'
           );
         }
