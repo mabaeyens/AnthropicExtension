@@ -3,9 +3,12 @@
 Genera la documentación en español (Word + PDF) a partir de un único modelo de
 contenido, de modo que ambos formatos no puedan divergir.
 
-Produce, en la raíz del repositorio:
+Produce, en la carpeta docs/:
   - Guia-de-Usuario-Asistente-IA-Anthropic-ES.docx / .pdf
   - Resumen-de-Arquitectura-Asistente-IA-Anthropic-ES.docx / .pdf
+
+Solo los .pdf se versionan (docs/*.pdf); los .docx son fuentes editables locales
+y están git-ignored (docs/*.docx). Regenere con este script tras cambiar el contenido.
 
 El contenido refleja el estado ACTUAL del proyecto (v0.5.0, endurecido y
 proxy-only): el navegador no guarda ninguna clave de API, todo el tráfico pasa
@@ -670,12 +673,14 @@ def main():
         (GUIA, "Guia-de-Usuario-Asistente-IA-Anthropic-ES"),
         (ARQ, "Resumen-de-Arquitectura-Asistente-IA-Anthropic-ES"),
     ]
+    docs_dir = os.path.join(ROOT, "docs")
+    os.makedirs(docs_dir, exist_ok=True)
     for blocks, base in jobs:
-        docx_path = os.path.join(ROOT, base + ".docx")
-        pdf_path = os.path.join(ROOT, base + ".pdf")
+        docx_path = os.path.join(docs_dir, base + ".docx")
+        pdf_path = os.path.join(docs_dir, base + ".pdf")
         build_docx(blocks, docx_path)
         build_pdf(blocks, pdf_path)
-        print("wrote", base + ".docx", "+", base + ".pdf")
+        print("wrote docs/" + base + ".docx", "+ docs/" + base + ".pdf")
 
 
 if __name__ == "__main__":

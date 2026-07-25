@@ -25,6 +25,12 @@ _staging/
 __pycache__/
 *.pyc
 
+# Generated documentation. Only the PDFs under docs/ are versioned; the editable
+# Word sources are regenerated locally via scripts/build-docs-es.py and not tracked.
+# (Also ignores any stray root-level docx/pdf builds — docs live only in docs/.)
+*.docx
+/*.pdf
+
 # Claude Code local files (kept locally, not shipped in the repo)
 .claude/
 CLAUDE.md
