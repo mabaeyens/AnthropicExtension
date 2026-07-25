@@ -13,6 +13,8 @@ const { createValidator } = require('./lib/auth-qlik');
 const { authenticate } = require('./middleware/authenticate');
 const { createLimiter } = require('./lib/limiter');
 const { admission } = require('./middleware/admission');
+const { modelAllowlist } = require('./lib/model-allowlist');
+const { validateBody } = require('./middleware/validate');
 const { installGracefulShutdown } = require('./lib/shutdown');
 
 function readFileMaybe(p) { return p ? fs.readFileSync(p) : undefined; }
@@ -49,6 +51,11 @@ const PROVIDERS = providers();
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Input validation config (P04). The server-side allowlist is authoritative; the
+// extension's client registry is advisory. maxTokensCap bounds a caller's max_tokens.
+const ALLOWLIST = modelAllowlist();
+const MAX_TOKENS_CAP = Number(process.env.MAX_TOKENS_CAP) || 8192;
+
 // Concurrency admission control (P03 / X02). Limits are config-driven with the
 // documented defaults.
 const limiter = createLimiter({
@@ -77,8 +84,26 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'x-api-key', 'Origin', 'X-Requested-With', 'Accept', 'anthropic-version'],
 }));
 
-// Parse JSON request bodies
-app.use(express.json({ limit: '10mb' })); // Increase limit if you send large data
+// Parse JSON request bodies, capped at a per-request size limit (P04 §4.3). Sufficient
+// for chart data + context but not open-ended; oversize bodies are rejected 413 below.
+app.use(express.json({ limit: process.env.BODY_LIMIT || '1mb' }));
+
+// Body-parser error handler (P04 §4.6): map size/parse failures to 413/400 with a
+// generic message + request id — never an echo of the offending body.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const requestId = crypto.randomUUID();
+  if (err.type === 'entity.too.large') {
+    console.warn('rejected oversize body', { requestId, limit: err.limit });
+    return res.status(413).json({ error: 'Request body too large', requestId });
+  }
+  if (err.type === 'entity.parse.failed') {
+    console.warn('rejected malformed JSON body', { requestId });
+    return res.status(400).json({ error: 'Malformed JSON body', requestId });
+  }
+  console.error('unhandled request error', { requestId, message: err.message });
+  return res.status(500).json({ error: 'Internal error', requestId });
+});
 
 // Health check endpoint (open — no auth, no upstream)
 app.get('/health', (req, res) => {
@@ -88,8 +113,6 @@ app.get('/health', (req, res) => {
 // Validate the Qlik session for every /api/* request before any credential
 // injection or upstream call (P02). The validator was created + config-checked at boot.
 app.use('/api', authenticate(validate));
-// Then admission control (P03) — needs req.qlikUser from authenticate above.
-app.use('/api', admission(limiter));
 
 // Shared handler for both upstreams. The credential is injected server-side per
 // request; the client's body is forwarded, but NONE of its auth headers are — the
@@ -145,10 +168,17 @@ function makeHandler(providerName) {
   };
 }
 
+// Per-route pipeline: authenticate (above) → validate body + model allowlist (P04) →
+// admission slot (P03) → handler. Validation runs BEFORE admission so an invalid or
+// disallowed request is rejected without ever consuming a concurrency slot.
+const validation = { allowlist: ALLOWLIST, maxTokensCap: MAX_TOKENS_CAP };
+
 // Anthropic (hosted) — key injected server-side.
-app.post('/api/anthropic', makeHandler('anthropic'));
+app.post('/api/anthropic',
+  validateBody('anthropic', validation), admission(limiter), makeHandler('anthropic'));
 // Local model (Ollama) — no key; lets the HTTPS Qlik page reach a plain-HTTP local model.
-app.post('/api/ollama', makeHandler('ollama'));
+app.post('/api/ollama',
+  validateBody('ollama', validation), admission(limiter), makeHandler('ollama'));
 
 // Start the server
 const server = https.createServer(options, app);
