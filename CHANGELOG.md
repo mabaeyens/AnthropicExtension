@@ -13,8 +13,8 @@ All notable changes to this extension are documented here.
 ## [0.5.0] - 2026-07-25
 
 Production-hardening release. Turns the demo-grade extension + `cm-llm-proxy` into a hardened,
-monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tested (26 extension +
-86 proxy `node:test` cases) with CI on both artefacts.
+monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tested (30 extension +
+96 proxy `node:test` cases) with CI on both artefacts.
 
 ### ⚠️ Breaking
 
