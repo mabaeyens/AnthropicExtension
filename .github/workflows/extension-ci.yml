@@ -1,0 +1,41 @@
+name: extension-ci
+
+# Lint + unit tests for the extension's pure modules (E06). Path-filtered to the
+# extension paths so a proxy-only change does NOT trigger it (and proxy-ci is filtered
+# to proxy/** so an extension-only change does not trigger that). The shipped runtime
+# stays plain AMD — no bundler runs here; the no-bundler test asserts that.
+on:
+  push:
+    paths:
+      - 'js/**'
+      - 'test/**'
+      - 'AnthropicExtension.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.eslintrc.json'
+      - '.github/workflows/extension-ci.yml'
+  pull_request:
+    paths:
+      - 'js/**'
+      - 'test/**'
+      - 'AnthropicExtension.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.eslintrc.json'
+      - '.github/workflows/extension-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test

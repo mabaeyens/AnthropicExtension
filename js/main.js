@@ -7,9 +7,6 @@ define([
   './config',
   'css!../css/style.css'
 ], function ($, qlik, anthropicAPI, dataCollector, uiController, config) {
-  
-  // Access debug mode from config
-  const DEBUG_MODE = config.DEBUG_MODE;
   'use strict';
 
   return {

@@ -1,0 +1,24 @@
+{
+  "root": true,
+  "env": { "browser": true, "amd": true, "es2020": true },
+  "parserOptions": { "ecmaVersion": 2020, "sourceType": "script" },
+  "extends": "eslint:recommended",
+  "globals": {
+    "define": "readonly",
+    "require": "readonly",
+    "requirejs": "readonly"
+  },
+  "rules": {
+    "no-console": "off",
+    "no-empty": ["error", { "allowEmptyCatch": true }],
+    "no-unused-vars": ["warn", { "args": "none", "vars": "all" }],
+    "no-prototype-builtins": "off"
+  },
+  "ignorePatterns": ["js/lib/**", "node_modules/**", "_ul/**"],
+  "overrides": [
+    {
+      "files": ["test/**/*.js"],
+      "env": { "node": true, "browser": false, "amd": false }
+    }
+  ]
+}
