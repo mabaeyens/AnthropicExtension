@@ -1,4 +1,4 @@
-define(['qlik', 'jquery', './config'], function(qlik, $, config) {
+define(['qlik', 'jquery', './config', './log'], function(qlik, $, config, log) {
   'use strict';
 
   // Module variables
@@ -17,7 +17,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     init: function(app, id) {
       currentApp = app;
       extensionId = id;
-      console.log("[DEBUG] Data collector initialized with app:", app.id);
+      log.debug("[DEBUG] Data collector initialized with app:", app.id);
     },
 
     /**
@@ -25,7 +25,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      * @param {function} callback - Function to call when a visualization is selected
      */
     startSelectionTracking: function(callback) {
-      console.log("[DEBUG] Starting visualization selection tracking");
+      log.debug("[DEBUG] Starting visualization selection tracking");
 
       // Store the callback
       selectionCallback = callback;
@@ -50,7 +50,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         // Skip clicks on the container that holds our own extension object.
         if ($vizObject.find('#' + extensionId).length ||
             $vizObject.find('[data-object-id="' + extensionId + '"]').length) {
-          console.log("[DEBUG] Ignoring click on container with extension");
+          log.debug("[DEBUG] Ignoring click on container with extension");
           return;
         }
 
@@ -61,7 +61,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         const candidates = this.collectCandidateIds($target, $vizObject);
 
         if (!candidates.length) {
-          console.log("[DEBUG] No candidate object ids found near click");
+          log.debug("[DEBUG] No candidate object ids found near click");
           // Surface a copyable DOM dump so the id-bearing attribute can be
           // identified without another blind round-trip.
           if ($vizObject.length && selectionCallback) {
@@ -73,7 +73,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           return;
         }
 
-        console.log("[DEBUG] Candidate ids:", candidates.join(', '));
+        log.debug("[DEBUG] Candidate ids:", candidates.join(', '));
 
         // Prevent default behavior. stopImmediatePropagation is essential: this
         // handler runs in the capture phase (see addEventListener below), so
@@ -86,7 +86,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         this.getObjectDataFromCandidates(candidates).then(function(result) {
           if (selectionCallback) selectionCallback(result.id, result.data);
         }).catch(function(error) {
-          console.error("[DEBUG] No candidate id resolved to a usable chart:", error);
+          log.error("[DEBUG] No candidate id resolved to a usable chart:", error);
           if (selectionCallback) {
             selectionCallback(null, null, {
               objectId: candidates[0],
@@ -102,14 +102,14 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       // fired too late and the chart selected values instead.
       document.addEventListener('click', selectionHandler, true);
 
-      console.log("[DEBUG] Selection tracking started");
+      log.debug("[DEBUG] Selection tracking started");
     },
 
     /**
      * Stop tracking visualization selections
      */
     stopSelectionTracking: function() {
-      console.log("[DEBUG] Stopping visualization selection tracking");
+      log.debug("[DEBUG] Stopping visualization selection tracking");
 
       // Remove the handler if it exists (must match the capture-phase flag)
       if (selectionHandler) {
@@ -117,7 +117,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         selectionHandler = null;
       }
 
-      console.log("[DEBUG] Selection tracking stopped");
+      log.debug("[DEBUG] Selection tracking stopped");
     },
 
     /**
@@ -163,7 +163,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         .appendTo('head');
 
       selectionStyleAdded = true;
-      console.log("[DEBUG] Selection styles added");
+      log.debug("[DEBUG] Selection styles added");
     },
 
     /**
@@ -366,7 +366,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     * @returns {Promise} Promise resolving to the object data
     */
     getObjectData: function (objectId) {
-      console.log("[DEBUG] Getting data for object:", objectId);
+      log.debug("[DEBUG] Getting data for object:", objectId);
 
       return new Promise(function (resolve, reject) {
         // Make sure we have a current app
@@ -375,28 +375,28 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         }
         
         // Add debug information about the object
-        console.log("[DEBUG] Getting object:", objectId, "in app:", currentApp.id);
+        log.debug("[DEBUG] Getting object:", objectId, "in app:", currentApp.id);
         
         // Get the object properties first to determine its type
         currentApp.getObjectProperties(objectId).then(function(props) {
-          console.log("[DEBUG] Object properties:", 
+          log.debug("[DEBUG] Object properties:", 
                     `Type: ${props.qInfo?.qType || "Unknown"}, ` +
                     `Properties: ${Object.keys(props).join(", ")}`);
         }).catch(function(err) {
-          console.log("[DEBUG] Could not get object properties:", err);
+          log.debug("[DEBUG] Could not get object properties:", err);
         });
 
         // First, get the current selections
         this.getCurrentSelections().then(selections => {
-          console.log("[DEBUG] Got current selections");
+          log.debug("[DEBUG] Got current selections");
 
           // Try to get the object using the visualization API first
           currentApp.visualization.get(objectId).then(function (vis) {
-            console.log("[DEBUG] Got visualization object");
+            log.debug("[DEBUG] Got visualization object");
 
             // Get the layout
             vis.model.getLayout().then(function (layout) {
-              console.log("[DEBUG] Got layout for visualization");
+              log.debug("[DEBUG] Got layout for visualization");
 
               // Process the layout
               const chartData = this.processVisualizationLayout(objectId, layout);
@@ -406,7 +406,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
 
               // Check if we need to fetch more data (for tables)
               if (chartData.needsDataFetch) {
-                console.log("[DEBUG] Need to fetch additional table data");
+                log.debug("[DEBUG] Need to fetch additional table data");
 
                 // Fetch the complete table data
                 this.fetchTableData(objectId, chartData).then(function (completeData) {
@@ -417,7 +417,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
                   });
                   resolve(optimizedData);
                 }.bind(this)).catch(function (error) {
-                  console.error("[DEBUG] Error fetching table data:", error);
+                  log.error("[DEBUG] Error fetching table data:", error);
                   // Optimize what we have - use high limits
                   const optimizedData = this.optimizeDataForTokens(chartData, {
                     maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
@@ -432,7 +432,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
                 resolve(optimizedData);
               }
             }.bind(this)).catch(function (error) {
-              console.error("[DEBUG] Error getting visualization layout:", error);
+              log.error("[DEBUG] Error getting visualization layout:", error);
 
               // Try fallback method
               this.getObjectFallback(objectId).then(chartData => {
@@ -442,7 +442,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
               }).catch(reject);
             }.bind(this));
           }.bind(this)).catch(function (error) {
-            console.error("[DEBUG] Error getting visualization:", error);
+            log.error("[DEBUG] Error getting visualization:", error);
 
             // Try fallback method
             this.getObjectFallback(objectId).then(chartData => {
@@ -452,7 +452,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             }).catch(reject);
           }.bind(this));
         }).catch(function (error) {
-          console.error("[DEBUG] Error getting current selections:", error);
+          log.error("[DEBUG] Error getting current selections:", error);
 
           // Continue without selections
           this.getObjectFallback(objectId).then(resolve).catch(reject);
@@ -465,7 +465,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     * @returns {Promise} Promise resolving to an array of selections
     */
     getCurrentSelections: function () {
-      console.log("[DEBUG] Getting current selections");
+      log.debug("[DEBUG] Getting current selections");
 
       if (!currentApp) {
         currentApp = qlik.currApp();
@@ -495,10 +495,10 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         if (objId && doc.destroySessionObject) {
           doc.destroySessionObject(objId).catch(function () {});
         }
-        console.log("[DEBUG] Current selections:", selections.length);
+        log.debug("[DEBUG] Current selections:", selections.length);
         return selections;
       }).catch(function (err) {
-        console.warn("[DEBUG] Could not read current selections:", err);
+        log.warn("[DEBUG] Could not read current selections:", err);
         if (objId && doc.destroySessionObject) {
           doc.destroySessionObject(objId).catch(function () {});
         }
@@ -512,22 +512,22 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
     * @returns {Promise} Promise resolving to the object data
     */
     getObjectFallback: function (objectId) {
-      console.log("[DEBUG] Using fallback method for object:", objectId);
+      log.debug("[DEBUG] Using fallback method for object:", objectId);
 
       return new Promise(function (resolve, reject) {
         // Try using getObject API
         currentApp.getObject(objectId).then(function (model) {
-          console.log("[DEBUG] Got object model via fallback");
+          log.debug("[DEBUG] Got object model via fallback");
 
           model.getLayout().then(function (layout) {
-            console.log("[DEBUG] Got layout via fallback");
+            log.debug("[DEBUG] Got layout via fallback");
 
             // Process the layout
             const chartData = this.processVisualizationLayout(objectId, layout);
 
             // Check if we need to fetch more data (for tables)
             if (chartData.needsDataFetch) {
-              console.log("[DEBUG] Need to fetch additional table data (fallback)");
+              log.debug("[DEBUG] Need to fetch additional table data (fallback)");
 
               // Fetch the complete table data
               this.fetchTableData(objectId, chartData).then(function (completeData) {
@@ -537,7 +537,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
                 });
                 resolve(optimizedData);
               }.bind(this)).catch(function (error) {
-                console.error("[DEBUG] Error fetching table data (fallback):", error);
+                log.error("[DEBUG] Error fetching table data (fallback):", error);
                 // Optimize what we have
                 const optimizedData = this.optimizeDataForTokens(chartData, {
                   maxRows: 100000 // Recover the full hypercube; the 65 KB warning guards oversized sends
@@ -552,7 +552,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
               resolve(optimizedData);
             }
           }.bind(this)).catch(function (error) {
-            console.error("[DEBUG] Error getting layout via fallback:", error);
+            log.error("[DEBUG] Error getting layout via fallback:", error);
 
             // Create basic data from DOM as last resort
             const $object = $('.qv-object-' + objectId);
@@ -573,7 +573,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             resolve(basicData);
           }.bind(this));
         }.bind(this)).catch(function (error) {
-          console.error("[DEBUG] Complete fallback error:", error);
+          log.error("[DEBUG] Complete fallback error:", error);
           reject(error);
         });
       }.bind(this));
@@ -587,12 +587,12 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      */
     processVisualizationLayout: function(objectId, layout) {
       if (config.DEBUG_MODE) {
-        console.log("[DEBUG] Processing visualization layout");
+        log.debug("[DEBUG] Processing visualization layout");
         
         // Add extra debug for special visualization types
         const visType = layout.visualization || layout.qInfo?.qType || "Unknown";
-        console.log(`[DEBUG] Visualization type: ${visType}`);
-        console.log(`[DEBUG] Layout properties: ${Object.keys(layout).join(", ")}`);
+        log.debug(`[DEBUG] Visualization type: ${visType}`);
+        log.debug(`[DEBUG] Layout properties: ${Object.keys(layout).join(", ")}`);
       }
       
       // Determine chart family for specialized handling
@@ -620,7 +620,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       // Extract data from hypercube if available
       if (layout.qHyperCube) {
         if (config.DEBUG_MODE) {
-          console.log("[DEBUG] Extracting hypercube data");
+          log.debug("[DEBUG] Extracting hypercube data");
         }
     
         // Add chart type info
@@ -688,7 +688,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         // Process stacked data pages (common in bar/combo charts)
         if (layout.qHyperCube.qStackedDataPages && layout.qHyperCube.qStackedDataPages.length > 0) {
           if (config.DEBUG_MODE) {
-            console.log("[DEBUG] Processing stacked data pages");
+            log.debug("[DEBUG] Processing stacked data pages");
           }
           
           // If we don't already have chartProperties, initialize it
@@ -740,7 +740,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         const isStacked = chartData.chartProperties && chartData.chartProperties.hasStackedData;
         if (!isStacked && hc.qSize && hc.qSize.qcx > 0 && hc.qSize.qcy > chartData.data.length) {
           if (config.DEBUG_MODE) {
-            console.log("[DEBUG] Full fetch needed:", hc.qSize.qcx + "x" + hc.qSize.qcy,
+            log.debug("[DEBUG] Full fetch needed:", hc.qSize.qcx + "x" + hc.qSize.qcy,
                         "(initial page had " + chartData.data.length + " rows)");
           }
           chartData.needsDataFetch = true;
@@ -750,7 +750,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       } else if (isMap) {
         // Handle map visualizations - they can have different data structures
         if (config.DEBUG_MODE) {
-          console.log("[DEBUG] Map visualization - checking for map-specific data");
+          log.debug("[DEBUG] Map visualization - checking for map-specific data");
         }
         
         // Set map-specific properties 
@@ -767,7 +767,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         // Map visualizations can have layer data
         if (layout.qLayerData) {
           if (config.DEBUG_MODE) {
-            console.log("[DEBUG] Found qLayerData, extracting map data");
+            log.debug("[DEBUG] Found qLayerData, extracting map data");
           }
           
           chartData.mapLayers = [];
@@ -775,7 +775,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           // Process each layer
           layout.qLayerData.forEach((layer, layerIndex) => {
             if (config.DEBUG_MODE) {
-              console.log(`[DEBUG] Processing map layer ${layerIndex}, type: ${layer.type}`);
+              log.debug(`[DEBUG] Processing map layer ${layerIndex}, type: ${layer.type}`);
             }
             
             const layerInfo = {
@@ -797,7 +797,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             // Extract data from layer hypercube if available
             if (layer.qHyperCube) {
               if (config.DEBUG_MODE) {
-                console.log(`[DEBUG] Processing map layer ${layerIndex} hypercube`);
+                log.debug(`[DEBUG] Processing map layer ${layerIndex} hypercube`);
               }
               
               // Add dimensions from this layer
@@ -912,7 +912,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             // Extract data from geographic structure if available
             if (layer.qGeoData && layer.qGeoData.qFeatures) {
               if (config.DEBUG_MODE) {
-                console.log(`[DEBUG] Processing map layer ${layerIndex} geographic data`);
+                log.debug(`[DEBUG] Processing map layer ${layerIndex} geographic data`);
               }
               
               // Create a structured representation of the geographic data
@@ -988,7 +988,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
                 }
               } catch (error) {
                 if (config.DEBUG_MODE) {
-                  console.log(`[DEBUG] Error extracting geographic data from layer ${layerIndex}:`, error);
+                  log.debug(`[DEBUG] Error extracting geographic data from layer ${layerIndex}:`, error);
                 }
               }
             }
@@ -1008,7 +1008,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
                 }
               } catch (error) {
                 if (config.DEBUG_MODE) {
-                  console.log(`[DEBUG] Error extracting area data from layer ${layerIndex}:`, error);
+                  log.debug(`[DEBUG] Error extracting area data from layer ${layerIndex}:`, error);
                 }
               }
             }
@@ -1016,7 +1016,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         } else if (layout.mapData) {
           // Alternative map data structure (used in some map types)
           if (config.DEBUG_MODE) {
-            console.log("[DEBUG] Found mapData structure, extracting data");
+            log.debug("[DEBUG] Found mapData structure, extracting data");
           }
           
           chartData.mapInfo = {
@@ -1080,7 +1080,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         // Handle case where no data was extracted
         if (!hasExtractedData || chartData.data.length === 0) {
           if (config.DEBUG_MODE) {
-            console.log("[DEBUG] No meaningful data could be extracted from map visualization");
+            log.debug("[DEBUG] No meaningful data could be extracted from map visualization");
           }
           
           // Add the map visualization info as text data
@@ -1117,7 +1117,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         }
       } else {
         if (config.DEBUG_MODE) {
-          console.log("[DEBUG] No hypercube or recognized data structure found in this visualization");
+          log.debug("[DEBUG] No hypercube or recognized data structure found in this visualization");
         }
         chartData.data = ["This visualization does not contain tabular data."];
       }
@@ -1132,7 +1132,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      * @returns {Promise} Promise resolving to the complete chart data
      */
     fetchTableData: function (objectId, chartData) {
-      console.log("[DEBUG] Fetching complete table data for:", objectId);
+      log.debug("[DEBUG] Fetching complete table data for:", objectId);
 
       return new Promise(function (resolve, reject) {
         // Make sure we have a current app
@@ -1147,7 +1147,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           const qWidth = qSize.qcx;
           const qHeight = qSize.qcy;
 
-          console.log("[DEBUG] Table dimensions:", qWidth, "x", qHeight);
+          log.debug("[DEBUG] Table dimensions:", qWidth, "x", qHeight);
 
           if (!qWidth || qWidth < 1) {
             delete chartData.needsDataFetch;
@@ -1166,12 +1166,12 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           const maxRows = Math.max(1, Math.min(qHeight, Math.floor(maxCells / qWidth)));
           if (maxRows < qHeight) {
             chartData.dataTruncated = { fetched: maxRows, total: qHeight };
-            console.warn("[DEBUG] Table truncated to", maxRows, "of", qHeight, "rows");
+            log.warn("[DEBUG] Table truncated to", maxRows, "of", qHeight, "rows");
           }
 
           const pageHeight = Math.max(1, Math.floor(MAX_CELLS_PER_PAGE / qWidth));
           const numPages = Math.ceil(maxRows / pageHeight);
-          console.log("[DEBUG] Will fetch", numPages, "pages (height", pageHeight + ") up to", maxRows, "rows");
+          log.debug("[DEBUG] Will fetch", numPages, "pages (height", pageHeight + ") up to", maxRows, "rows");
 
           // Build page descriptors (bounded by maxRows).
           const pages = [];
@@ -1187,7 +1187,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             if (batch.length === 0) {
               delete chartData.needsDataFetch;
               delete chartData.hypercubeSize;
-              console.log("[DEBUG] Processed", chartData.data.length, "rows of data");
+              log.debug("[DEBUG] Processed", chartData.data.length, "rows of data");
               resolve(chartData);
               return;
             }
@@ -1205,7 +1205,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
               });
               runBatch(start + concurrency);
             }).catch(function (error) {
-              console.error("[DEBUG] Error fetching table data pages:", error);
+              log.error("[DEBUG] Error fetching table data pages:", error);
               // Return whatever we already collected.
               delete chartData.needsDataFetch;
               delete chartData.hypercubeSize;
@@ -1214,7 +1214,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           }
           runBatch(0);
         }).catch(function (error) {
-          console.error("[DEBUG] Error getting object for data fetch:", error);
+          log.error("[DEBUG] Error getting object for data fetch:", error);
           reject(error);
         });
       });
@@ -1225,12 +1225,12 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      * @returns {Promise} Promise resolving to the app context object
      */
     getAppContext: function() {
-      console.log("[DEBUG] Starting app context collection");
+      log.debug("[DEBUG] Starting app context collection");
 
       // Make sure we have a current app
       if (!currentApp) {
         currentApp = qlik.currApp();
-        console.log("[DEBUG] Setting current app from qlik.currApp()");
+        log.debug("[DEBUG] Setting current app from qlik.currApp()");
       }
 
       var MAX_FIELDS = (config.DATA && config.DATA.MAX_FIELDS) || 500; // soft cap to bound token usage
@@ -1247,7 +1247,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       };
 
       if (!doc) {
-        console.warn("[DEBUG] No enigma handle — returning minimal context");
+        log.warn("[DEBUG] No enigma handle — returning minimal context");
         return Promise.resolve(appContext);
       }
 
@@ -1267,7 +1267,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           };
         });
       }, function(err) {
-        console.warn("[DEBUG] getTablesAndKeys failed:", err);
+        log.warn("[DEBUG] getTablesAndKeys failed:", err);
       });
 
       var pLists = doc.createSessionObject({
@@ -1313,7 +1313,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           }
         });
       }, function(err) {
-        console.warn("[DEBUG] field/master list session object failed:", err);
+        log.warn("[DEBUG] field/master list session object failed:", err);
       });
 
       return Promise.all([pTitle, pTables, pLists]).then(function() {
@@ -1335,13 +1335,13 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         // slice + same notice. The flag mirrors the row-truncation notice.
         if (flat.length > MAX_FIELDS) {
           appContext.fieldsTruncated = { kept: MAX_FIELDS, total: flat.length };
-          console.warn("[DEBUG] Field list truncated to", MAX_FIELDS, "of", flat.length, "fields");
+          log.warn("[DEBUG] Field list truncated to", MAX_FIELDS, "of", flat.length, "fields");
           flat = flat.slice(0, MAX_FIELDS);
         }
         appContext.fields = flat.map(function(name) { return { name: name }; });
         delete appContext._sessionFields;
 
-        console.log("[DEBUG] Context: " + appContext.tables.length + " tables, " +
+        log.debug("[DEBUG] Context: " + appContext.tables.length + " tables, " +
           appContext.fields.length + " fields, " +
           appContext.masterMeasures.length + " measures, " +
           appContext.masterDimensions.length + " dimensions");
@@ -1389,10 +1389,10 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      * @returns {object} Processed and structured data
      */
     processObjectData: function(objectData) {
-      console.log("[DEBUG] Processing object data");
+      log.debug("[DEBUG] Processing object data");
 
       if (!objectData) {
-        console.warn("[DEBUG] No object data provided");
+        log.warn("[DEBUG] No object data provided");
         return null;
       }
 
@@ -1405,7 +1405,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           measures: objectData.measures || []
         };
       } catch (e) {
-        console.error("[DEBUG] Error processing object data:", e);
+        log.error("[DEBUG] Error processing object data:", e);
         return {
           error: "Error processing data: " + e.message,
           rawData: objectData
@@ -1420,8 +1420,8 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      */
     optimizeDataForTokens: function (chartData, options = {}) {
       if (config.DEBUG_MODE) {
-        console.log("[DEBUG] Optimizing data for token efficiency");
-        console.log("[DEBUG] Optimization options:", JSON.stringify(options));
+        log.debug("[DEBUG] Optimizing data for token efficiency");
+        log.debug("[DEBUG] Optimization options:", JSON.stringify(options));
       }
 
       if (!chartData) {
@@ -1436,7 +1436,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       const originalSize = originalString.length;
       
       if (config.DEBUG_MODE) {
-        console.log(`[DEBUG] Original data size: ${originalSize} characters`);
+        log.debug(`[DEBUG] Original data size: ${originalSize} characters`);
       }
 
       // Get default options from config settings
@@ -1459,7 +1459,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             if (key === 'maxRows' && typeof value === 'number' && !isNaN(value) && value > 0) {
               settings[key] = value;
               if (config.DEBUG_MODE) {
-                console.log(`[DEBUG] Overriding maxRows with value from options: ${value}`);
+                log.debug(`[DEBUG] Overriding maxRows with value from options: ${value}`);
               }
             } else if (key !== 'maxRows') {
               settings[key] = value;
@@ -1469,7 +1469,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       }
       
       if (config.DEBUG_MODE) {
-        console.log("[DEBUG] Final optimization settings:", JSON.stringify(settings));
+        log.debug("[DEBUG] Final optimization settings:", JSON.stringify(settings));
       }
 
       // Create a minimal copy with only needed information
@@ -1518,7 +1518,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             dataToProcess.length > settings.maxRows) {
             
           if (config.DEBUG_MODE) {
-            console.log(`[DEBUG] Limiting rows from ${dataToProcess.length} to ${settings.maxRows}`);
+            log.debug(`[DEBUG] Limiting rows from ${dataToProcess.length} to ${settings.maxRows}`);
           }
           
           // Save the sampling info
@@ -1592,13 +1592,13 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         }
 
         if (config.DEBUG_MODE) {
-          console.log(`[DEBUG] Optimized data structure with ${optimized.data.length} rows (from ${chartData.data.length})`);
+          log.debug(`[DEBUG] Optimized data structure with ${optimized.data.length} rows (from ${chartData.data.length})`);
         }
       } else {
         // No data to optimize
         optimized.data = [];
         if (config.DEBUG_MODE) {
-          console.log("[DEBUG] No data rows found to optimize");
+          log.debug("[DEBUG] No data rows found to optimize");
         }
       }
 
@@ -1615,7 +1615,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       };
       
       if (config.DEBUG_MODE) {
-        console.log(`[DEBUG] Optimized data size: ${optimizedSize} characters (${optimized.metrics.reduction}% reduction)`);
+        log.debug(`[DEBUG] Optimized data size: ${optimizedSize} characters (${optimized.metrics.reduction}% reduction)`);
       }
 
       return optimized;
@@ -1626,7 +1626,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
      * @param {function} callback - Callback function when a visualization is selected
      */
     setupSelectionTracking: function(callback) {
-      console.log("[DEBUG] Legacy setupSelectionTracking called");
+      log.debug("[DEBUG] Legacy setupSelectionTracking called");
       selectionCallback = callback;
 
       // Initialize the app if needed
@@ -1638,7 +1638,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
       this.addSelectionStyles();
 
       // We won't automatically start tracking here, but we'll store the callback
-      console.log("[DEBUG] Selection callback stored, but tracking not started");
+      log.debug("[DEBUG] Selection callback stored, but tracking not started");
     }
   };
 });

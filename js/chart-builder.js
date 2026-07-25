@@ -1,4 +1,4 @@
-define(['qlik', 'jquery', './config'], function (qlik, $, config) {
+define(['qlik', 'jquery', './config', './log'], function (qlik, $, config, log) {
   'use strict';
 
   // Native chart types we steer the AI toward. Used only to build the prompt —
@@ -300,7 +300,7 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
           spec = JSON.parse(relaxJson(json));
         } catch (e2) {
           spec = salvageSpec(relaxJson(json));
-          if (spec) console.warn('Anthropic: chart spec salvaged from malformed JSON', spec);
+          if (spec) log.warn('Anthropic: chart spec salvaged from malformed JSON', spec);
         }
       }
       if (!spec || typeof spec !== 'object') return null;
@@ -415,7 +415,7 @@ define(['qlik', 'jquery', './config'], function (qlik, $, config) {
             var msg = (err && err.message) ? err.message : String(err);
             // The columns are the usual culprit — log them so a failure can be
             // diagnosed from the browser console.
-            console.error('Anthropic: chart render failed', msg, spec, columns);
+            log.error('Anthropic: chart render failed', msg, spec, columns);
             $host.html('<div class="anthropic-chart-error">Could not render chart: ' +
               escapeHtml(msg) + '</div>');
             reject(err instanceof Error ? err : new Error(msg));

@@ -54,6 +54,13 @@ define(['./config'], function (config) {
       var chat = cfg.CHAT || {};
       if (!isPosInt(chat.HISTORY_MAX)) errors.push('CHAT.HISTORY_MAX must be a positive integer');
 
+      // Log verbosity must be one of the known levels (js/log.js falls back to INFO,
+      // but a typo'd level is worth surfacing).
+      if (cfg.LOG_LEVEL !== undefined &&
+          ['ERROR', 'WARN', 'INFO', 'DEBUG'].indexOf(String(cfg.LOG_LEVEL).toUpperCase()) === -1) {
+        errors.push('LOG_LEVEL must be one of ERROR, WARN, INFO, DEBUG');
+      }
+
       // Clamp/validate the data-collection bounds (E05); its own warnings cover DATA.*.
       if (typeof cfg.validateData === 'function') { cfg.validateData(); }
 

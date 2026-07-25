@@ -56,6 +56,12 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 - **Dev tooling & tests (E06/P07):** dev-only `package.json` + ESLint + `node:test` suites (an AMD
   test harness for the pure modules; integration + load/drain harness for the proxy) and GitHub
   Actions CI, path-filtered per artefact. The shipped runtime stays plain AMD (no build step).
+- **Log-verbosity levels.** Both the proxy and the extension now support **ERROR / WARN / INFO /
+  DEBUG** severity control. The proxy reads `LOG_LEVEL` from its `.env` (audit log unaffected — it
+  is always written); the extension exposes a **Log level** setting in the properties panel that
+  changes browser-console verbosity live. ERROR shows only errors; WARN adds warnings (incl. rejected
+  requests); INFO adds one line per accepted action; DEBUG traces everything. Defaults to DEBUG for
+  test/demo — lower it to quieten output for production.
 - **Config & release hardening (E05/E07):** all data-collection bounds centralised in `config.DATA`
   and validated at init; config validation surfaces problems in the panel; `package.ps1` fails on a
   `config.js`/`.qext` version mismatch; a `RELEASING.md` checklist and `scripts/pre-release-check.ps1`

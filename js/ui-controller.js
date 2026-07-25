@@ -1,5 +1,5 @@
-define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting', './config', './template', './chart-builder'],
-  function ($, qlik, anthropicAPI, dataCollector, formatting, config, template, chartBuilder) {
+define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting', './config', './template', './chart-builder', './log'],
+  function ($, qlik, anthropicAPI, dataCollector, formatting, config, template, chartBuilder, log) {
     'use strict';
 
     let $container = null;
@@ -330,7 +330,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         }).catch(function() { /* ignore — resolution falls back to field names */ });
 
         this.setupEventHandlers();
-        console.log('UI initialized — floating widget injected into body');
+        log.debug('UI initialized — floating widget injected into body');
       },
 
       // Drag the panel by its header. Pins the panel to viewport coords (it
@@ -711,7 +711,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           });
         }
 
-        console.log('Event handlers set up');
+        log.debug('Event handlers set up');
       },
 
       processAnthropicRequest: function(appId, requestData, $thinking, chartSig) {
@@ -1157,7 +1157,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
             ' rows will be analyzed.</span>').show();
         }
 
-        console.log('[DEBUG] Chart added:', objectId, '— total:', selectedCharts.length);
+        log.debug('[DEBUG] Chart added:', objectId, '— total:', selectedCharts.length);
       },
 
       // Legacy compatibility

@@ -1,4 +1,4 @@
-define(['jquery', './config', './data-format'], function($, config, dataFormat) {
+define(['jquery', './config', './data-format', './log'], function($, config, dataFormat, log) {
   'use strict';
 
   return {
@@ -126,9 +126,9 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
       }
 
       const payloadString = JSON.stringify(payload);
-      console.log("[DEBUG] Payload size:", payloadString.length, "bytes");
+      log.debug("[DEBUG] Payload size:", payloadString.length, "bytes");
       if (payloadString.length > 1000000) {
-        console.warn("[DEBUG] WARNING: Very large payload size:", payloadString.length, "bytes");
+        log.warn("[DEBUG] WARNING: Very large payload size:", payloadString.length, "bytes");
       }
 
       return {
@@ -150,7 +150,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
      *          (new chat, model switch, teardown) — symmetric with streamToAnthropic (E02).
      */
     sendToAnthropic: function(appId, data, successCallback, errorCallback) {
-      console.log("[DEBUG] Anthropic API called with appId:", appId);
+      log.debug("[DEBUG] Anthropic API called with appId:", appId);
       var jqXHR = null;
       var aborted = false;
       var handle = {
@@ -169,7 +169,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
         const messageMetrics = req.metrics;
         const payloadString = req.payloadString;
         const transport = req.transport;
-        console.log("[DEBUG] Sending request to:", transport.url);
+        log.debug("[DEBUG] Sending request to:", transport.url);
 
         // Make the API call
         jqXHR = $.ajax({
@@ -184,14 +184,14 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
           timeout: local ? config.API.LOCAL.TIMEOUT : config.API.TIMEOUT,
           success: function(response) {
             if (aborted) return;
-            console.log("[DEBUG] SUCCESS: Received response from proxy");
+            log.debug("[DEBUG] SUCCESS: Received response from proxy");
             // Pass both response and metrics to callback
             successCallback(response, messageMetrics);
           },
           error: function(xhr, status, error) {
             // A caller-initiated abort surfaces here as status 'abort' — not an error.
             if (aborted || status === 'abort') return;
-            console.error("[DEBUG] ERROR: Problem with proxy request:", status, error);
+            log.error("[DEBUG] ERROR: Problem with proxy request:", status, error);
             errorCallback({
               message: 'Error communicating with Anthropic API: ' + error,
               status: xhr && xhr.status ? xhr.status : status,
@@ -200,7 +200,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
           }
         });
       } catch (e) {
-        console.error("[DEBUG] Exception in sendToAnthropic:", e.message);
+        log.error("[DEBUG] Exception in sendToAnthropic:", e.message);
         errorCallback({
           message: "Exception occurred: " + e.message
         });
@@ -268,7 +268,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
       }
 
       var headers = Object.assign({}, req.transport.headers, { 'Accept': 'text/event-stream' });
-      console.log("[DEBUG] Streaming request to:", req.transport.url);
+      log.debug("[DEBUG] Streaming request to:", req.transport.url);
 
       // Client-side deadline. fetch has no timeout option, so arm one manually and
       // clear it on completion.
@@ -345,7 +345,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
       }).catch(function(err) {
         clearTimeout(timer);
         if (aborted) return;   // user navigated away / switched model — not an error
-        console.error("[DEBUG] ERROR: streaming request failed:", err);
+        log.error("[DEBUG] ERROR: streaming request failed:", err);
         errorCallback(err && err.message ? err : {
           message: 'Error communicating with Anthropic API: ' + err,
           status: 'error',
@@ -379,7 +379,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
       };
       
       if (config.DEBUG_MODE) {
-        console.log("[DEBUG] Initial metrics:", JSON.stringify(metricReport));
+        log.debug("[DEBUG] Initial metrics:", JSON.stringify(metricReport));
       }
       
       // Format chart data more efficiently if available.
@@ -387,7 +387,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
       let formattedChartData = "";
       if (data.chartData) {
         if (config.DEBUG_MODE) {
-          console.log("[DEBUG] Formatting chart data for efficient LLM consumption");
+          log.debug("[DEBUG] Formatting chart data for efficient LLM consumption");
         }
 
         const rawChartDataJson = JSON.stringify(data.chartData);
@@ -419,7 +419,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
               });
             }
             part += "\nNOTE: Detailed map data extraction is currently limited.\n";
-            if (config.DEBUG_MODE) console.log("[DEBUG] Processed map visualization");
+            if (config.DEBUG_MODE) log.debug("[DEBUG] Processed map visualization");
           } else {
             part += this.formatChartDataForLLM(chart);
             if (config.FEATURES && config.FEATURES.EXTRACT_CITY_VALUES) {
@@ -439,14 +439,14 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
         metricReport.chartDataReduction = Math.round((1 - (formattedChartData.length / rawChartDataJson.length)) * 100);
 
         if (config.DEBUG_MODE) {
-          console.log(`[DEBUG] Chart data formatted: ${formattedChartData.length} chars (${metricReport.chartDataReduction}% reduction from raw JSON)`);
+          log.debug(`[DEBUG] Chart data formatted: ${formattedChartData.length} chars (${metricReport.chartDataReduction}% reduction from raw JSON)`);
         }
       }
       
       // Add app context if available
       if (data.context) {
         if (config.DEBUG_MODE) {
-          console.log("[DEBUG] Adding app context to payload");
+          log.debug("[DEBUG] Adding app context to payload");
         }
         
         // Format context more concisely
@@ -463,7 +463,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
       // Add chart data if available
       if (formattedChartData) {
         if (config.DEBUG_MODE) {
-          console.log("[DEBUG] Adding formatted chart data to payload");
+          log.debug("[DEBUG] Adding formatted chart data to payload");
         }
         
         if (data.context) {
@@ -483,7 +483,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
       metricReport.estimatedTokens = Math.ceil(messageText.length / 4);
       
       if (config.DEBUG_MODE) {
-        console.log(`[DEBUG] Total message size: ${metricReport.totalChars} chars, ~${metricReport.estimatedTokens} tokens`);
+        log.debug(`[DEBUG] Total message size: ${metricReport.totalChars} chars, ~${metricReport.estimatedTokens} tokens`);
       }
       
       // Expose the built user-turn text so the caller can append it to history.
@@ -592,7 +592,7 @@ define(['jquery', './config', './data-format'], function($, config, dataFormat) 
           const sampleRow = chartData.data[0];
           if (Array.isArray(sampleRow) && headers.length < sampleRow.length) {
             if (config.DEBUG_MODE) {
-              console.log("[DEBUG] Header count mismatch - generating generic headers");
+              log.debug("[DEBUG] Header count mismatch - generating generic headers");
             }
             
             headers = isMap ? ["Layer"] : []; // Reset with layer if it's a map

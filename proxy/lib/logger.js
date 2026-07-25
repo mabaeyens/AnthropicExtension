@@ -27,20 +27,35 @@ function redact(value, seen = new Set()) {
   return out;
 }
 
+// Severity order (P06). A message is emitted only when its level is at or below the
+// configured threshold: ERROR < WARN < INFO < DEBUG. So LOG_LEVEL=ERROR shows only
+// errors; DEBUG shows everything. Unknown/blank level falls back to INFO.
+const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
+
+function normalizeLevel(level) {
+  const key = String(level || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(LEVELS, key) ? key : 'info';
+}
+
 function createLogger({
   sink = (line) => process.stdout.write(`${line}\n`),
   now = () => new Date().toISOString(),
   base = {},
+  level = 'info',
 } = {}) {
-  function emit(level, fields) {
-    const record = { ts: now(), level, ...base, ...redact(fields || {}) };
+  const threshold = LEVELS[normalizeLevel(level)];
+  function emit(msgLevel, fields) {
+    if (LEVELS[msgLevel] > threshold) return; // below the configured verbosity → skip
+    const record = { ts: now(), level: msgLevel, ...base, ...redact(fields || {}) };
     sink(JSON.stringify(record));
   }
   return {
-    info: (f) => emit('info', f),
-    warn: (f) => emit('warn', f),
+    level: normalizeLevel(level),
     error: (f) => emit('error', f),
-    child: (extra) => createLogger({ sink, now, base: { ...base, ...extra } }),
+    warn: (f) => emit('warn', f),
+    info: (f) => emit('info', f),
+    debug: (f) => emit('debug', f),
+    child: (extra) => createLogger({ sink, now, level, base: { ...base, ...extra } }),
   };
 }
 
@@ -79,4 +94,4 @@ function createRotatingSink({
   };
 }
 
-module.exports = { createLogger, createRotatingSink, redact, SENSITIVE };
+module.exports = { createLogger, createRotatingSink, redact, SENSITIVE, LEVELS, normalizeLevel };

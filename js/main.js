@@ -6,8 +6,9 @@ define([
   './ui-controller',
   './config',
   './config-validate',
+  './log',
   'css!../css/style.css'
-], function ($, qlik, anthropicAPI, dataCollector, uiController, config, configValidate) {
+], function ($, qlik, anthropicAPI, dataCollector, uiController, config, configValidate, log) {
   'use strict';
 
   return {
@@ -74,6 +75,23 @@ define([
                   component: "text",
                   label: "Ollama endpoint, used when a local model is selected. Must be HTTPS on QSEoW — e.g. https://localhost:3000/api/ollama."
                 },
+                logLevel: {
+                  ref: "props.logLevel",
+                  label: "Log level",
+                  type: "string",
+                  component: "dropdown",
+                  options: [
+                    { value: "ERROR", label: "Error — only errors" },
+                    { value: "WARN", label: "Warn — errors + warnings" },
+                    { value: "INFO", label: "Info — + accepted actions" },
+                    { value: "DEBUG", label: "Debug — everything" }
+                  ],
+                  defaultValue: config.LOG_LEVEL
+                },
+                logLevelHelp: {
+                  component: "text",
+                  label: "How much the extension writes to the browser console. DEBUG is the most verbose; lower it to ERROR/WARN to quieten the console once you're past testing."
+                },
                 versionInfo: {
                   component: "text",
                   label: "Version " + config.VERSION + " · build " + config.BUILD
@@ -108,6 +126,12 @@ define([
           config.API.LOCAL.URL = layout.props.localUrl;
         }
 
+        // Console log verbosity (js/log.js). Read on every paint so a change takes
+        // effect live without a reload.
+        if (layout.props.logLevel) {
+          config.LOG_LEVEL = layout.props.logLevel;
+        }
+
         // Keep the panel's connection status line in sync with the property change.
         uiController.renderApiKeyStatus();
       }
@@ -124,17 +148,17 @@ define([
         try {
           var vr = configValidate.validate(config);
           if (!vr.ok) {
-            console.error('[config] invalid configuration:', vr.errors);
+            log.error('[config] invalid configuration:', vr.errors);
             uiController.showConfigError(vr.errors);
           }
         } catch (e) {
-          console.warn('[config] validation error (ignored):', e && e.message);
+          log.warn('[config] validation error (ignored):', e && e.message);
         }
 
         const app = qlik.currApp();
         dataCollector.init(app, layout.qInfo.qId);
         dataCollector.setupSelectionTracking(function (objectId, objectData) {
-          console.log("Visualization selected:", objectId);
+          log.debug("Visualization selected:", objectId);
           uiController.updateSelectedVisualization(objectId, objectData);
         });
       }
@@ -147,12 +171,12 @@ define([
     // Idempotent (each step guards on presence), so a paint/destroy race can't throw.
     destroy: function () {
       try { uiController.teardown(); } catch (e) {
-        console.warn("[DEBUG] teardown error (ignored):", e && e.message);
+        log.warn("[DEBUG] teardown error (ignored):", e && e.message);
       }
     },
     controller: ['$scope', function ($scope) {
       // Controller logic here
-      console.log("AnthropicExtension controller initialized");
+      log.debug("AnthropicExtension controller initialized");
     }]
   };
 });

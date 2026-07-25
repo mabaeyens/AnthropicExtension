@@ -40,6 +40,36 @@ test('logger.child merges base fields', () => {
   assert.equal(JSON.parse(lines[0]).svc, 'proxy');
 });
 
+// ── log-level gating (LOG_LEVEL) ─────────────────────────────────────────────
+test('LOG_LEVEL gates by severity (ERROR<WARN<INFO<DEBUG)', () => {
+  const at = (level) => {
+    const lines = [];
+    const log = createLogger({ sink: (l) => lines.push(l), now: () => 'T', level });
+    log.error({ m: 'e' }); log.warn({ m: 'w' }); log.info({ m: 'i' }); log.debug({ m: 'd' });
+    return lines.map((l) => JSON.parse(l).level);
+  };
+  assert.deepEqual(at('error'), ['error']);
+  assert.deepEqual(at('warn'), ['error', 'warn']);
+  assert.deepEqual(at('info'), ['error', 'warn', 'info']);
+  assert.deepEqual(at('debug'), ['error', 'warn', 'info', 'debug']);
+});
+
+test('an unknown/blank LOG_LEVEL falls back to INFO', () => {
+  const lines = [];
+  const log = createLogger({ sink: (l) => lines.push(l), now: () => 'T', level: 'chatty' });
+  assert.equal(log.level, 'info');
+  log.debug({ m: 'd' });
+  assert.equal(lines.length, 0); // debug suppressed at info
+});
+
+test('level is case-insensitive and child inherits it', () => {
+  const lines = [];
+  const log = createLogger({ sink: (l) => lines.push(l), now: () => 'T', level: 'WARN' }).child({ svc: 'x' });
+  assert.equal(log.level, 'warn');
+  log.info({ m: 'i' });
+  assert.equal(lines.length, 0); // info suppressed at warn (inherited)
+});
+
 // ── rotating sink (fake fs) ─────────────────────────────────────────────────
 test('rotating sink rotates when the file would exceed maxBytes', () => {
   const files = {}; // path → contents

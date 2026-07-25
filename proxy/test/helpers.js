@@ -13,7 +13,7 @@ const { modelAllowlist } = require('../lib/model-allowlist');
 const { corsOptions } = require('../lib/cors');
 const { AuthError } = require('../lib/auth-qlik');
 
-const noopLogger = { info() {}, warn() {}, error() {}, child() { return noopLogger; } };
+const noopLogger = { debug() {}, info() {}, warn() {}, error() {}, level: 'debug', child() { return noopLogger; } };
 const noopAudit = { record() {} };
 const noopMetrics = { incRequest() {}, incRetry() {}, observeStatus() {}, snapshot() { return {}; } };
 

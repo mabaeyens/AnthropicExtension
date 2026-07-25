@@ -10,10 +10,12 @@ const assert = require('node:assert/strict');
 const { loadAmd } = require('./amd-loader');
 
 // parseChartSpec uses none of qlik/$/config — stub them minimally.
+const noopLog = { error() {}, warn() {}, info() {}, debug() {} };
 const chartBuilder = loadAmd('js/chart-builder.js', {
   qlik: {},
   jquery: function () { return { on() {}, append() {} }; },
   './config': { DATA: {} },
+  './log': noopLog,
 });
 
 test('parses a clean fenced qlik-chart block', () => {

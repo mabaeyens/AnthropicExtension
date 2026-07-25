@@ -70,7 +70,7 @@ function createApp({
   // Authenticate the Qlik session for every /api/* request (P02).
   app.use('/api', authenticate(validate));
 
-  const validation = { allowlist, maxTokensCap };
+  const validation = { allowlist, maxTokensCap, logger };
 
   function makeHandler(providerName) {
     const provider = providers[providerName];
@@ -79,6 +79,7 @@ function createApp({
       const rid = req.requestId || crypto.randomUUID();
       const model = req.body && req.body.model;
       const wantsStream = req.body && req.body.stream === true;
+      logger.debug({ event: 'upstream_request', provider: provider.name, requestId: rid, model, stream: wantsStream });
       let response;
       try {
         const headers = buildUpstreamHeaders(provider, anthropicKey);

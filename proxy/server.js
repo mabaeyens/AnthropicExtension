@@ -33,11 +33,11 @@ function makeSink(fileName) {
 // Aggregate ALL required-env checks up front so a misconfigured deploy fails fast
 // with a precise, complete message (which vars, what's wrong) — before any cert read
 // or network setup, and before the per-loader checks below.
+let bootSummary;
 try {
-  const { summary } = config.load(process.env);
-  console.log('[boot] configuration validated', JSON.stringify(summary));
+  bootSummary = config.load(process.env).summary;
 } catch (err) {
-  console.error('[FATAL]', err.message);
+  console.error('[FATAL]', err.message); // pre-logger fatal — always print
   process.exit(1);
 }
 
@@ -68,9 +68,12 @@ try {
 const port = process.env.PORT || 3000;
 
 // Observability (P06): structured app logger, a SEPARATE audit stream, and counters.
-const logger = createLogger({ sink: makeSink('app.log') });
+// LOG_LEVEL (ERROR|WARN|INFO|DEBUG, default INFO) gates how verbose the app log is;
+// the audit stream is unaffected (compliance record, always written).
+const logger = createLogger({ sink: makeSink('app.log'), level: process.env.LOG_LEVEL });
 const audit = createAudit({ sink: makeSink('audit.log') });
 const metrics = createMetrics();
+logger.info({ event: 'boot', config: bootSummary, logLevel: logger.level });
 
 // Concurrency admission control (P03 / X02).
 const limiter = createLimiter({

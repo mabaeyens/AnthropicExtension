@@ -13,11 +13,16 @@ define([], function() {
     // Debug mode - set to false for production
     DEBUG_MODE: false,  // Change to true to enable verbose console logging
 
+    // Console log verbosity (js/log.js): ERROR | WARN | INFO | DEBUG. Overridable
+    // per-instance from the "Log level" property. Default DEBUG during test/demo so
+    // the browser console shows everything; lower to WARN/ERROR to quieten it.
+    LOG_LEVEL: 'DEBUG',
+
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
     VERSION: '0.5.0',
-    BUILD: 32,
+    BUILD: 33,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
