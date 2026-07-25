@@ -4,7 +4,7 @@
   "private": true,
   "description": "Dev-only tooling (ESLint + node:test unit tests) for the AnthropicExtension Qlik Sense extension. NOT shipped — the runtime is plain AMD loaded by Qlik's RequireJS (no build step). package.ps1 zips only the runtime files.",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test \"test/**/*.test.js\"",
     "lint": "eslint js test"
   },
   "devDependencies": {
