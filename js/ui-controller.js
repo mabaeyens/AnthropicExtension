@@ -929,6 +929,15 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         this.scrollConversation();
       },
 
+      // Surface config-validation problems in the panel (E07 §4.2). Non-fatal: names
+      // the offending keys so the user can fix them in Edit object → Settings.
+      showConfigError: function(errors) {
+        if (!$container || !errors || !errors.length) return;
+        this.appendSystemNote(formatting.formatErrorMessage(
+          'Configuration problem — the assistant may not work until this is fixed: ' +
+          errors.join('; ')));
+      },
+
       scrollConversation: function() {
         // Newest exchange is at the top, so keep the view pinned there.
         var el = $container.find('.anthropic-panel-body')[0];

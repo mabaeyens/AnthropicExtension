@@ -5,8 +5,9 @@ define([
   './data-collector',
   './ui-controller',
   './config',
+  './config-validate',
   'css!../css/style.css'
-], function ($, qlik, anthropicAPI, dataCollector, uiController, config) {
+], function ($, qlik, anthropicAPI, dataCollector, uiController, config, configValidate) {
   'use strict';
 
   return {
@@ -116,9 +117,19 @@ define([
       // ensures only one widget exists even when the extension appears on multiple sheets
       // or when Qlik calls paint() repeatedly on property changes / selection events.
       if (!document.getElementById('anthropic-floating-widget')) {
-        // Validate the data-collection bounds once, before any fetch can run (E05).
-        if (typeof config.validateData === 'function') { config.validateData(); }
         uiController.initUI($element, layout);
+
+        // Validate config once at init (E07). Non-fatal: a problem is surfaced in the
+        // panel (naming the offending key) rather than throwing and wedging the render.
+        try {
+          var vr = configValidate.validate(config);
+          if (!vr.ok) {
+            console.error('[config] invalid configuration:', vr.errors);
+            uiController.showConfigError(vr.errors);
+          }
+        } catch (e) {
+          console.warn('[config] validation error (ignored):', e && e.message);
+        }
 
         const app = qlik.currApp();
         dataCollector.init(app, layout.qInfo.qId);

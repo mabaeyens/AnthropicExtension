@@ -37,6 +37,7 @@ function loadAmd(relPath, stubs = {}, sandboxExtras = {}) {
     Math,
     JSON,
     Date,
+    URL,
   }, sandboxExtras);
   // NB: `window` is intentionally left undefined unless a test provides it, so modules that
   // guard on `typeof window !== 'undefined'` take their no-DOM branch (e.g. formatting.js
