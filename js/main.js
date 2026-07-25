@@ -119,6 +119,8 @@ define([
       // ensures only one widget exists even when the extension appears on multiple sheets
       // or when Qlik calls paint() repeatedly on property changes / selection events.
       if (!document.getElementById('anthropic-floating-widget')) {
+        // Validate the data-collection bounds once, before any fetch can run (E05).
+        if (typeof config.validateData === 'function') { config.validateData(); }
         uiController.initUI($element, layout);
 
         const app = qlik.currApp();

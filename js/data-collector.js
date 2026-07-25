@@ -1159,7 +1159,8 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
           // HARD CAP: never fetch more than MAX_FETCH_CELLS cells. A wide/tall table
           // would otherwise spawn thousands of concurrent requests and freeze the tab.
           // Beyond the cap we truncate and flag it so the UI can warn the user.
-          const MAX_CELLS_PER_PAGE = 10000;
+          // All bounds come from config.DATA (validated at init, E05) — no magic numbers.
+          const MAX_CELLS_PER_PAGE = (config.DATA && config.DATA.MAX_CELLS_PER_PAGE) || 10000;
           const maxCells = (config.DATA && config.DATA.MAX_FETCH_CELLS) || 50000;
           const concurrency = (config.DATA && config.DATA.FETCH_PAGE_CONCURRENCY) || 4;
           const maxRows = Math.max(1, Math.min(qHeight, Math.floor(maxCells / qWidth)));
@@ -1232,7 +1233,7 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
         console.log("[DEBUG] Setting current app from qlik.currApp()");
       }
 
-      var MAX_FIELDS = 500; // soft cap to bound token usage on huge models
+      var MAX_FIELDS = (config.DATA && config.DATA.MAX_FIELDS) || 500; // soft cap to bound token usage
       var doc = currentApp.model && currentApp.model.enigmaModel;
 
       var appContext = {
@@ -1330,7 +1331,13 @@ define(['qlik', 'jquery', './config'], function(qlik, $, config) {
             if (name && !seen[name]) { seen[name] = true; flat.push(name); }
           });
         }
-        if (flat.length > MAX_FIELDS) flat = flat.slice(0, MAX_FIELDS);
+        // Bound the field list (E05 §4.5). Deterministic: same fields in → same kept
+        // slice + same notice. The flag mirrors the row-truncation notice.
+        if (flat.length > MAX_FIELDS) {
+          appContext.fieldsTruncated = { kept: MAX_FIELDS, total: flat.length };
+          console.warn("[DEBUG] Field list truncated to", MAX_FIELDS, "of", flat.length, "fields");
+          flat = flat.slice(0, MAX_FIELDS);
+        }
         appContext.fields = flat.map(function(name) { return { name: name }; });
         delete appContext._sessionFields;
 

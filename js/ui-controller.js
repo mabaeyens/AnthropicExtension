@@ -31,8 +31,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
     // so the newest exchange sits at the top of the thread.
     let $currentTurn = null;
 
-    // Threshold above which we warn before shipping chart data to the LLM.
-    const LARGE_PAYLOAD_BYTES = 65 * 1024;
+    // Threshold above which we warn before shipping chart data to the LLM (E05).
+    const LARGE_PAYLOAD_BYTES = (config.DATA && config.DATA.WARN_PAYLOAD_BYTES) || 65 * 1024;
 
     // If the chart data about to be sent exceeds the size threshold, ask the
     // user to confirm (large payloads mean high token cost / slow / costly
@@ -106,6 +106,19 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
     }
     // Returns { ok, chartData, truncated }. ok=false means the user cancelled.
     function guardPayload(chartDataPayload) {
+      // Hard client-side ceiling reconciled with the proxy BODY_LIMIT (E05 §4.6): a
+      // payload the server would 413 is caught HERE first, with a friendlier message.
+      var maxBytes = (config.DATA && config.DATA.MAX_PAYLOAD_BYTES) || 1048576;
+      if (chartDataPayload) {
+        var payloadBytes = 0;
+        try { payloadBytes = JSON.stringify(chartDataPayload).length; } catch (e) { payloadBytes = 0; }
+        if (payloadBytes > maxBytes) {
+          window.alert('The selected chart data is about ' + Math.round(payloadBytes / 1024) +
+            ' KB, which exceeds the ' + Math.round(maxBytes / 1024) + ' KB the proxy accepts.\n\n' +
+            'Filter the data with selections (or select fewer charts) and try again.');
+          return { ok: false };
+        }
+      }
       var budget = inputBudget();
       var est = estimateTokens(chartDataPayload);
       if (est > budget) {
@@ -587,6 +600,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
               requestData.context = context;
+              if (context.fieldsTruncated) {
+                self.appendSystemNote(formatting.formatWarningMessage(
+                  'Field list truncated to ' + context.fieldsTruncated.kept + ' of ' +
+                  context.fieldsTruncated.total + ' fields to bound token usage.'));
+              }
               chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processAnthropicRequest(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
@@ -660,6 +678,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           if (includeContext && !contextSent) {
             dataCollector.getAppContextCached().then(function(context) {
               requestData.context = context;
+              if (context.fieldsTruncated) {
+                self.appendSystemNote(formatting.formatWarningMessage(
+                  'Field list truncated to ' + context.fieldsTruncated.kept + ' of ' +
+                  context.fieldsTruncated.total + ' fields to bound token usage.'));
+              }
               chartBuilder.setMasterItems(context.masterDimensions, context.masterMeasures);
               self.processChartSuggestion(appId, requestData, $thinking, chartSig);
             }).catch(function(error) {
