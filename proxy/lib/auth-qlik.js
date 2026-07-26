@@ -1,7 +1,7 @@
 'use strict';
 
 const https = require('https');
-const { URL } = require('url');
+const crypto = require('crypto');
 
 // Caller authentication against Qlik (P02). The proxy independently validates the
 // browser's Qlik session — it never trusts a client-asserted identity — and resolves
@@ -44,18 +44,41 @@ function extractUser(body) {
   return `${dir}\\${id}`;
 }
 
+// A Qlik XSRF key: exactly 16 alphanumeric chars. QPS/QRS reject any API call that does
+// not carry a matching `xrfkey` in BOTH the query string and the `X-Qlik-Xrfkey` header
+// (verified on the node: without it QPS returns 403 "XSRF prevention check failed").
+const XRF_ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function genXrfkey(bytes) {
+  const b = bytes || crypto.randomBytes(16);
+  let s = '';
+  for (let i = 0; i < 16; i += 1) s += XRF_ALPHABET[b[i] % XRF_ALPHABET.length];
+  return s;
+}
+
+// Build the QPS session-validation request (url + headers) for a session id, adding the
+// required xrfkey to both the query string and the header. Pure + exported so the xrfkey
+// wiring is unit-testable without a live QPS. `base` is e.g.
+// https://host:4243/qps/session (the default virtual proxy; a named vp bakes its prefix
+// into the URL, e.g. .../qps/<prefix>/session).
+function buildSessionRequest(base, sessionRef, xrf) {
+  const trimmed = String(base).replace(/\/+$/, '');
+  const sep = trimmed.indexOf('?') === -1 ? '?' : '&';
+  const url = `${trimmed}/${encodeURIComponent(sessionRef)}${sep}xrfkey=${xrf}`;
+  return { url, headers: { 'X-Qlik-Xrfkey': xrf } };
+}
+
 // Default network validator: a mutual-TLS GET to the Qlik Proxy Service (QPS) session
-// endpoint. The exact QPS path / xrfkey convention is environment-specific and is
-// finalised on the Qlik node; tests inject `deps.fetchSession` instead of exercising
-// this. Returns { status, body } and never throws for HTTP status (only for transport).
+// endpoint, carrying the xrfkey QPS requires. `deps.makeXrfkey` is injectable for tests.
+// Returns { status, body } and never throws for HTTP status (only for transport).
 function defaultFetchSession(config, deps) {
   const agent = deps.agent || new https.Agent({
     cert: config.cert, key: config.key, ca: config.ca, keepAlive: true,
   });
+  const makeXrfkey = deps.makeXrfkey || genXrfkey;
   const base = config.sessionUrl.replace(/\/+$/, '');
   return (sessionRef) => new Promise((resolve, reject) => {
-    const u = new URL(`${base}/${encodeURIComponent(sessionRef)}`);
-    const req = https.request(u, { method: 'GET', agent, timeout: 5000 }, (res) => {
+    const built = buildSessionRequest(base, sessionRef, makeXrfkey());
+    const req = https.request(built.url, { method: 'GET', agent, timeout: 5000, headers: built.headers }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => {
@@ -112,4 +135,7 @@ function createValidator(config = {}, deps = {}) {
   return validate;
 }
 
-module.exports = { createValidator, extractUser, createTtlCache, AuthError, UpstreamError };
+module.exports = {
+  createValidator, extractUser, createTtlCache, AuthError, UpstreamError,
+  buildSessionRequest, genXrfkey,
+};
