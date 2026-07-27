@@ -24,13 +24,19 @@ define(['./config'], function (config) {
       var errors = [];
       var api = cfg.API || {};
 
-      // Proxy is mandatory after E01 — the browser holds no key and never calls Anthropic
-      // directly, so a missing/malformed proxy URL means nothing will work.
-      if (!isValidUrl(api.PROXY_URL)) {
-        errors.push('API.PROXY_URL must be a valid URL (the proxy is mandatory)');
+      // Each URL is optional but must be well-formed when set: BLANK MEANS "this backend
+      // is switched off" and its models are withheld, which is how a local-only (or
+      // Anthropic-only) deployment is configured. Only having neither is a real problem —
+      // then there is nothing to talk to at all.
+      var localUrl = api.LOCAL ? api.LOCAL.URL : '';
+      if (api.PROXY_URL && !isValidUrl(api.PROXY_URL)) {
+        errors.push('API.PROXY_URL is set but is not a valid URL');
       }
-      if (api.LOCAL && !isValidUrl(api.LOCAL.URL)) {
-        errors.push('API.LOCAL.URL must be a valid URL');
+      if (localUrl && !isValidUrl(localUrl)) {
+        errors.push('API.LOCAL.URL is set but is not a valid URL');
+      }
+      if (!api.PROXY_URL && !localUrl) {
+        errors.push('No endpoint configured — set a Proxy URL (Claude), a Local model URL (Ollama), or both');
       }
 
       if (!isPosInt(api.MAX_TOKENS)) errors.push('API.MAX_TOKENS must be a positive integer');
@@ -45,9 +51,9 @@ define(['./config'], function (config) {
             errors.push('API.MODELS[' + i + '] is local but has no Ollama tag');
           }
         });
-        if (isNonEmptyString(api.MODEL) &&
-            !api.MODELS.some(function (m) { return m && m.id === api.MODEL; })) {
-          errors.push('API.MODEL (' + api.MODEL + ') must match an id in API.MODELS');
+        if (isNonEmptyString(api.MODEL_DEFAULT) &&
+            !api.MODELS.some(function (m) { return m && m.id === api.MODEL_DEFAULT; })) {
+          errors.push('API.MODEL_DEFAULT (' + api.MODEL_DEFAULT + ') must match an id in API.MODELS');
         }
       }
 

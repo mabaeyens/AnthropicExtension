@@ -14,7 +14,7 @@ function load(cfgOverrides) {
       PROXY_URL: 'https://host:3000/api/anthropic',
       LOCAL: { URL: 'https://host:3000/api/ollama' },
       MAX_TOKENS: 4000,
-      MODEL: 'claude-haiku-4-5',
+      MODEL_DEFAULT: 'claude-haiku-4-5',
       MODELS: [
         { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
         { id: 'ministral-local', label: 'Ministral', local: true, tag: 'ministral-3-demo' }
@@ -52,11 +52,36 @@ test('a local model without a tag is reported', () => {
   assert.ok(r.errors.some((e) => e.includes('local but has no')));
 });
 
-test('MODEL not matching any MODELS id is reported', () => {
+test('MODEL_DEFAULT not matching any MODELS id is reported', () => {
   const { validator, cfg } = load();
-  cfg.API.MODEL = 'does-not-exist';
+  cfg.API.MODEL_DEFAULT = 'does-not-exist';
   const r = validator.validate(cfg);
-  assert.ok(r.errors.some((e) => e.includes('API.MODEL')));
+  assert.ok(r.errors.some((e) => e.includes('API.MODEL_DEFAULT')));
+});
+
+// Blank means "this backend is switched off" — the supported way to run local-only (or
+// Anthropic-only). Only having neither endpoint is an actual misconfiguration.
+test('a blank Proxy URL is valid on its own', () => {
+  const { validator, cfg } = load();
+  cfg.API.PROXY_URL = '';
+  const r = validator.validate(cfg);
+  assert.equal(r.ok, true, r.errors.join('; '));
+});
+
+test('a blank Local model URL is valid on its own', () => {
+  const { validator, cfg } = load();
+  cfg.API.LOCAL.URL = '';
+  const r = validator.validate(cfg);
+  assert.equal(r.ok, true, r.errors.join('; '));
+});
+
+test('having NO endpoint at all is reported', () => {
+  const { validator, cfg } = load();
+  cfg.API.PROXY_URL = '';
+  cfg.API.LOCAL.URL = '';
+  const r = validator.validate(cfg);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => e.includes('No endpoint configured')));
 });
 
 test('non-positive MAX_TOKENS / HISTORY_MAX are reported', () => {

@@ -1,14 +1,16 @@
 'use strict';
 
-// Regression tests for the session-sticky model choice (config.saveModelState /
-// restoreModelState). Navigating to a sheet where the extension object is NOT placed can
-// leave the body-global widget standing while a fresh AMD module set is instantiated —
-// API.MODEL then reverted to the shipped default (Haiku) and the picker redrew from it.
-// The choice is mirrored into sessionStorage so a fresh instance restores it instead.
+// Tests for the session state mirrored into sessionStorage (config.saveModelState /
+// restoreModelState). Only USER-SET FACTS are stored — the property default, the in-panel
+// pick, and the two endpoints — never a derived value. Storing a derived (availability-
+// corrected) model is what let one bad correction outlive the tab and permanently override
+// the object's property.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadAmd } = require('./amd-loader');
+
+const OLLAMA = 'https://host:3000/api/ollama';
 
 // Minimal sessionStorage stand-in — the real one is a DOM API the Node tests don't have.
 function fakeStorage(seed) {
@@ -17,44 +19,68 @@ function fakeStorage(seed) {
     getItem: (k) => (map.has(k) ? map.get(k) : null),
     setItem: (k, v) => map.set(k, String(v)),
     removeItem: (k) => map.delete(k),
-    dump: () => Object.fromEntries(map),
   };
 }
 
-// A fresh config module instance sharing one storage — i.e. what a sheet change produces.
 const freshConfig = (storage) => loadAmd('js/config.js', {}, { window: { sessionStorage: storage } });
 
-test('a saved model choice is restored by a fresh module instance', () => {
+test('the property default, the pick and both endpoints survive into a fresh instance', () => {
   const storage = fakeStorage();
 
   const first = freshConfig(storage);
-  assert.equal(first.API.MODEL, 'claude-haiku-4-5', 'shipped default');
-  first.API.MODEL = 'ministral-local-3b';
-  first.API.MODEL_LOCKED = true;
-  first.API.MODEL_FROM_PROPS = 'claude-haiku-4-5';
+  assert.equal(first.API.MODEL_DEFAULT, 'claude-haiku-4-5', 'shipped default');
+  first.API.MODEL_DEFAULT = 'ministral-local-3b';
+  first.API.MODEL_PICK = 'ministral-local';
+  first.API.LOCAL.URL = OLLAMA;
+  first.API.PROXY_URL = '';
   first.saveModelState();
 
   const second = freshConfig(storage);
-  assert.equal(second.API.MODEL, 'ministral-local-3b');
-  assert.equal(second.API.MODEL_LOCKED, true);
-  // Carried over so paint() doesn't mistake the unchanged property for an explicit edit
-  // and overwrite the pick.
-  assert.equal(second.API.MODEL_FROM_PROPS, 'claude-haiku-4-5');
+  assert.equal(second.API.MODEL_DEFAULT, 'ministral-local-3b');
+  assert.equal(second.API.MODEL_PICK, 'ministral-local');
+  // The endpoints ride along so availability is judged against the user's configuration
+  // and not against the blank literals, which would misjudge every model as unreachable.
+  assert.equal(second.API.LOCAL.URL, OLLAMA);
+  assert.equal(second.API.PROXY_URL, '');
 });
 
-test('a model id no longer in the registry is ignored', () => {
+test('no pick is stored as null, so the property default rules', () => {
+  const storage = fakeStorage();
+  const first = freshConfig(storage);
+  first.API.MODEL_DEFAULT = 'ministral-local-3b';
+  first.saveModelState();
+
+  const second = freshConfig(storage);
+  assert.equal(second.API.MODEL_PICK, null);
+  assert.equal(second.API.MODEL_DEFAULT, 'ministral-local-3b');
+});
+
+test('state written by an older build is discarded, not reinterpreted', () => {
+  // v1/v2 entries stored a derived {model, locked} pair. Reinterpreting one would revive
+  // exactly the stuck state this redesign removes.
   const storage = fakeStorage({
-    'anthropicExtension.model': JSON.stringify({ model: 'claude-retired-1', locked: true }),
+    'anthropicExtension.model': JSON.stringify({ v: 2, model: 'claude-opus-4-8', locked: true }),
   });
   const config = freshConfig(storage);
-  assert.equal(config.API.MODEL, 'claude-haiku-4-5', 'falls back to the shipped default');
-  assert.equal(config.API.MODEL_LOCKED, false);
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5', 'ignored — back to the shipped default');
+  assert.equal(config.API.MODEL_PICK, null);
+  assert.equal(storage.getItem('anthropicExtension.model'), null, 'and the entry is cleared');
+});
+
+test('ids no longer in the registry are dropped', () => {
+  const storage = fakeStorage({
+    'anthropicExtension.model': JSON.stringify({
+      v: 3, modelDefault: 'claude-retired-1', modelPick: 'also-retired',
+    }),
+  });
+  const config = freshConfig(storage);
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5');
+  assert.equal(config.API.MODEL_PICK, null);
 });
 
 test('corrupt stored state does not break module load', () => {
-  const storage = fakeStorage({ 'anthropicExtension.model': '{not json' });
-  const config = freshConfig(storage);
-  assert.equal(config.API.MODEL, 'claude-haiku-4-5');
+  const config = freshConfig(fakeStorage({ 'anthropicExtension.model': '{not json' }));
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5');
 });
 
 test('with no window (Node/tests) save and restore are inert no-ops', () => {
@@ -63,8 +89,8 @@ test('with no window (Node/tests) save and restore are inert no-ops', () => {
   assert.doesNotThrow(() => config.saveModelState());
 });
 
-test('an empty session starts from the shipped default, not a previous tab', () => {
+test('the shipped endpoints are blank — an unconfigured object must look unconfigured', () => {
   const config = freshConfig(fakeStorage());
-  assert.equal(config.API.MODEL, 'claude-haiku-4-5');
-  assert.equal(config.API.MODEL_FROM_PROPS, null);
+  assert.equal(config.API.PROXY_URL, '');
+  assert.equal(config.API.LOCAL.URL, '');
 });

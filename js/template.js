@@ -17,6 +17,10 @@ define([], function() {
     </div>
     <div class="anthropic-panel-body">
       <div class="anthropic-extension-container">
+        <!-- Live configuration banner, rendered by renderConfigStatus(). A dedicated
+             element, not a chat message: it must clear itself the moment the
+             configuration becomes valid. -->
+        <div id="anthropic-config-banner" class="anthropic-config-banner" style="display:none;"></div>
         <div class="anthropic-input-area">
 
           <!-- API key status: populated by initUI (no input field — key set via properties panel) -->

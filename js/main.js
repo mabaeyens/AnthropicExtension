@@ -11,6 +11,27 @@ define([
 ], function ($, qlik, anthropicAPI, dataCollector, uiController, config, configValidate, log) {
   'use strict';
 
+  // ── Config ownership ────────────────────────────────────────────────────────────────
+  // `config` is ONE module singleton shared by every object of this extension in the app,
+  // but the properties (Default model, Proxy URL, Local model URL) are PER OBJECT. With no
+  // gate, every object's paint() writes the shared config and the last one painted wins:
+  // navigating to a sheet holding a second, never-configured object silently replaced the
+  // configured model with that object's untouched dropdown default, and contributed its
+  // blank URLs to validation. The widget is a single floating panel, so it can only follow
+  // one object — exactly one is elected the owner and the others' property blocks are
+  // skipped.
+  //
+  // Election: an object may own the config if there is no owner yet, if it already is the
+  // owner, or if it is CONFIGURED (has a non-blank URL property) while the incumbent is
+  // not — so a never-configured object can never keep ownership from a real one. An owner
+  // that stops painting (deleted, or on a sheet nobody visits) goes stale and a configured
+  // object can take over.
+  var configOwnerId = null;
+  var configOwnerConfigured = false;
+  var configOwnerSeen = 0;
+  var OWNER_STALE_MS = 30000;
+  var warnedNonOwner = null;   // throttles the warning to one line per non-owning object
+
   return {
     initialProperties: {
       qHyperCubeDef: {
@@ -42,16 +63,15 @@ define([
                   label: "Default model",
                   type: "string",
                   component: "dropdown",
-                  // Built from the model registry so the panel picker and this dropdown
-                  // can never drift apart. A FUNCTION, not a fixed array: it is evaluated
-                  // when the panel opens, so models whose transport is not configured
-                  // (Claude with a blank Proxy URL) are not offered here either.
-                  options: function () {
-                    return anthropicAPI.availableModels().map(function (m) {
-                      return { value: m.id, label: m.label + (m.hint ? ' (' + m.hint + ')' : '') };
-                    });
-                  },
-                  defaultValue: config.API.MODEL
+                  // The FULL registry, deliberately not filtered by availability. A Qlik
+                  // dropdown whose stored value is absent from its options renders blank
+                  // and can commit an empty props.model — which would drop the object's
+                  // default entirely. Unreachable models are instead filtered out of the
+                  // chat panel's picker, and the notices below say which backend is off.
+                  options: config.API.MODELS.map(function (m) {
+                    return { value: m.id, label: m.label + (m.hint ? ' (' + m.hint + ')' : '') };
+                  }),
+                  defaultValue: config.API.MODEL_SHIPPED_DEFAULT
                 },
                 modelHelp: {
                   component: "text",
@@ -123,27 +143,36 @@ define([
       }
     },
     paint: function ($element, layout) {
+      var qId = (layout.qInfo && layout.qInfo.qId) || null;
+      var isConfigured = !!(layout.props && (layout.props.proxyUrl || layout.props.localUrl));
+      var now = Date.now();
+      var mayOwn = !configOwnerId || configOwnerId === qId ||
+        (isConfigured && (!configOwnerConfigured || now - configOwnerSeen > OWNER_STALE_MS));
+      if (mayOwn) {
+        if (configOwnerId !== qId) {
+          log.info('[config] object ' + qId + ' now owns the shared configuration' +
+            (configOwnerId ? ' (was ' + configOwnerId + ')' : ''));
+        }
+        configOwnerId = qId;
+        configOwnerConfigured = isConfigured;
+        configOwnerSeen = now;   // refresh on EVERY owner paint, so staleness only advances
+                                 // while the owner really has stopped painting
+      } else if (layout.props && warnedNonOwner !== qId) {
+        warnedNonOwner = qId;
+        log.warn('[config] object ' + qId + ' is not the configuration owner (' +
+          configOwnerId + '); its Default model / URL properties are ignored.');
+      }
+
       // Apply per-instance config overrides from the properties panel. Cheap, so it
       // runs on every paint to pick up property changes (model / proxy URL).
-      if (layout.props) {
-        // The properties dropdown only seeds the model. Once the user picks one in
-        // the chat panel, MODEL_LOCKED is set and we stop clobbering their choice —
-        // paint() runs on every selection event, which would otherwise silently
-        // revert the model mid-conversation.
-        //
-        // Exception: actually CHANGING the property is an explicit user action and
-        // must win over an earlier in-panel pick (otherwise the dropdown is dead for
-        // the rest of the page load and the picker looks stuck on the old model).
-        // MODEL_FROM_PROPS holds the last value we saw, so a change is detectable
-        // and a plain repaint is not.
-        if (layout.props.model && layout.props.model !== config.API.MODEL_FROM_PROPS) {
-          config.API.MODEL_FROM_PROPS = layout.props.model;
-          config.API.MODEL = layout.props.model;
-          config.API.MODEL_LOCKED = false;
-          config.saveModelState();   // survive a module re-instantiation (sheet change)
-        } else if (layout.props.model && !config.API.MODEL_LOCKED) {
-          config.API.MODEL = layout.props.model;
-          config.saveModelState();
+      if (layout.props && mayOwn) {
+        // The property is the session DEFAULT; the in-panel picker overrides it. paint()
+        // runs on every selection event, so only an actual CHANGE to the property counts
+        // as a user action — and a change clears the pick, since editing the property is
+        // how an operator overrules a choice made in the panel.
+        if (layout.props.model && layout.props.model !== config.API.MODEL_DEFAULT) {
+          config.API.MODEL_DEFAULT = layout.props.model;
+          config.API.MODEL_PICK = null;
         }
         // Endpoints. The properties are AUTHORITATIVE, including when blank: a blank URL
         // means "this backend is not available here" and its models are withheld from
@@ -157,10 +186,10 @@ define([
         if (Object.prototype.hasOwnProperty.call(layout.props, 'localUrl')) {
           config.API.LOCAL.URL = layout.props.localUrl || '';
         }
-        // A model whose transport just disappeared must not stay active. Repaint the
-        // picker once, AFTER both the model and the URLs are applied, so it can never
-        // render a half-applied state (new model, old endpoints).
-        anthropicAPI.resolveActiveModel();
+        // Mirror the user-set facts (default, pick, endpoints) so they survive a page
+        // reload or a module re-instantiation, then repaint once — AFTER both the model
+        // and the URLs are applied, so the picker can never render a half-applied state.
+        config.saveModelState();
         uiController.renderModelPicker();
 
         // Console log verbosity (js/log.js). Read on every paint so a change takes
@@ -171,26 +200,28 @@ define([
 
         // Keep the panel's connection status line in sync with the property change.
         uiController.renderApiKeyStatus();
-      }
 
-      // One-time initialization for the session. The floating widget is injected into
-      // document.body, so we guard on its DOM presence rather than on $element — this
-      // ensures only one widget exists even when the extension appears on multiple sheets
-      // or when Qlik calls paint() repeatedly on property changes / selection events.
-      if (!document.getElementById('anthropic-floating-widget')) {
-        uiController.initUI($element, layout);
-
-        // Validate config once at init (E07). Non-fatal: a problem is surfaced in the
-        // panel (naming the offending key) rather than throwing and wedging the render.
+        // Validate on every OWNER paint, not once at init (E07). Once-only validation
+        // meant a banner raised before the owner's URLs were applied could never clear,
+        // and a non-owning object's blank properties could raise one at all.
         try {
           var vr = configValidate.validate(config);
-          if (!vr.ok) {
-            log.error('[config] invalid configuration:', vr.errors);
-            uiController.showConfigError(vr.errors);
-          }
+          uiController.renderConfigStatus(vr.ok ? [] : vr.errors);
+          if (!vr.ok) log.warn('[config] invalid configuration:', vr.errors);
         } catch (e) {
           log.warn('[config] validation error (ignored):', e && e.message);
         }
+      }
+
+      // One-time initialization PER MODULE INSTANCE. The guard is uiController's own
+      // state, not the presence of #anthropic-floating-widget in the DOM: the widget
+      // outlives sheet navigation, so a DOM check would let a freshly instantiated module
+      // set adopt a widget whose handlers and config belong to an instance it cannot
+      // reach — the panel then renders from the shipped literals instead of the object's
+      // properties. Re-initialising rebuilds the widget this instance can actually drive.
+      // Repeated paints (property changes, selection events) still initialise only once.
+      if (!uiController.isInitialized()) {
+        uiController.initUI($element, layout);
 
         const app = qlik.currApp();
         dataCollector.init(app, layout.qInfo.qId);

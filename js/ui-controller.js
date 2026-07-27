@@ -5,6 +5,17 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
     let $container = null;
     let selectionModeActive = false;
 
+    // Does THIS module instance own the widget? Ownership is module state, deliberately
+    // not "is there a widget in the DOM".
+    //
+    // The widget is appended to document.body and outlives sheet navigation, so a DOM
+    // check says "yes, initialised" even to an instance that has never run initUI, never
+    // seen the object's properties, and therefore still holds the shipped config literals.
+    // Such an instance would happily repaint the model picker from those literals — which
+    // is how the panel changed model on a sheet where the object is not placed. A
+    // non-owner now renders nothing at all: no paint, no repaint, no change.
+    let ownsWidget = false;
+
     // Resolve the panel container against the LIVE DOM. `$container` is assigned in
     // initUI, but the render helpers that paint() calls (renderModelPicker,
     // renderApiKeyStatus) can run when it is still null — first paint happens before
@@ -87,7 +98,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
     // data to fit or cancel and refine selections.
 
     function modelWindow() {
-      var m = config.API.MODEL;
+      var m = anthropicAPI.resolveActiveModel();
       return (config.API.CONTEXT_WINDOWS && config.API.CONTEXT_WINDOWS[m]) ||
         config.API.CONTEXT_WINDOW || 200000;
     }
@@ -143,7 +154,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       if (est > budget) {
         var ok = window.confirm(
           'This request is about ' + est.toLocaleString() + ' tokens, which exceeds the ' +
-          config.API.MODEL + ' context window (~' + modelWindow().toLocaleString() + ' tokens).\n\n' +
+          anthropicAPI.resolveActiveModel() + ' context window (~' + modelWindow().toLocaleString() + ' tokens).\n\n' +
           'OK — truncate the chart data to fit and send.\n' +
           'Cancel — stop, so you can filter the data with selections and try again.');
         if (!ok) return { ok: false };
@@ -296,8 +307,15 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       initUI: function($element, layout) {
         var self = this;
 
+        // Drop any widget left by a previous module instance before injecting ours, so
+        // there is exactly one widget and exactly one owner. (Its handlers close over the
+        // old instance's state; leaving it would split the panel's brain between two
+        // configs.)
+        $('#anthropic-floating-widget').remove();
+
         // Inject the floating widget into body (persists across sheet navigation)
         $('body').append(template);
+        ownsWidget = true;
         $container = $('#anthropic-floating-widget').find('.anthropic-extension-container');
 
         // Toggle button
@@ -450,6 +468,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       // only warns when the required proxy URL is not configured. Kept under the
       // old name/#area to avoid churn in call sites. Safe to call from paint().
       renderApiKeyStatus: function() {
+        if (!ownsWidget) return;
         var $panel = panelContainer();
         if (!$panel) return;
         var $area = $panel.find('#api-key-status-area');
@@ -468,12 +487,13 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       },
 
       // ── Model picker ─────────────────────────────────────────────────────────
-      // The active model lives in config.API.MODEL. The picker owns it for the
-      // rest of the session once used (config.API.MODEL_LOCKED), so a repaint
-      // can't revert it. Safe to call from paint() — no-ops before init.
+      // The active model is DERIVED (anthropic-api.resolveActiveModel): the in-panel
+      // pick if there is one, else the object's "Default model" property, corrected for
+      // a backend that is switched off. Safe to call from paint() — no-ops before init.
 
       /** Repaint the picker button, the "talking to" line, and the menu items. */
       renderModelPicker: function() {
+        if (!ownsWidget) return;
         var $panel = panelContainer();
         if (!$panel) return;
         // Correct the active model first: a model whose transport is not configured (e.g.
@@ -510,7 +530,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
 
       /** Replace the menu body with the change-model confirmation step. */
       renderModelConfirm: function(modelId) {
-        var $menu = $container.find('#anthropic-model-menu');
+        var $panel = panelContainer();
+        if (!$panel) return;
+        var $menu = $panel.find('#anthropic-model-menu');
         var label = anthropicAPI.getModelLabel(modelId);
         // Only the "clears your conversation" wording when there IS one to clear.
         var msg = conversation.length
@@ -529,9 +551,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
 
       /** Commit a model change: clears the thread, since history can't cross models. */
       applyModelChange: function(modelId) {
-        config.API.MODEL = modelId;
-        config.API.MODEL_LOCKED = true;
-        // Mirror the pick so it survives sheet navigation re-instantiating the modules.
+        // Record the PICK. The active model is derived from it (anthropic-api
+        // .resolveActiveModel), so nothing else can quietly overwrite the choice.
+        config.API.MODEL_PICK = modelId;
         config.saveModelState();
         this.startNewChat();
         this.renderModelPicker();
@@ -543,9 +565,10 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       },
 
       closeModelMenu: function() {
-        if (!$container) return;
-        $container.find('#anthropic-model-menu').hide();
-        $container.find('#anthropic-model-button').removeClass('is-open');
+        var $panel = panelContainer();
+        if (!$panel) return;
+        $panel.find('#anthropic-model-menu').hide();
+        $panel.find('#anthropic-model-button').removeClass('is-open');
       },
 
       setupEventHandlers: function() {
@@ -570,7 +593,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
 
         $container.find('#anthropic-model-menu').on('click', '.model-menu-item', function() {
           var id = $(this).data('model');
-          if (id === config.API.MODEL) { self.closeModelMenu(); return; }
+          if (id === anthropicAPI.resolveActiveModel()) { self.closeModelMenu(); return; }
           self.renderModelConfirm(id);
         });
 
@@ -665,7 +688,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           $container.find('#anthropic-prompt').val('');
           if (guard.truncated) {
             self.appendSystemNote(formatting.formatWarningMessage(
-              'Chart data was truncated to fit the ' + config.API.MODEL + ' context window.'));
+              'Chart data was truncated to fit the ' + anthropicAPI.resolveActiveModel() + ' context window.'));
           }
 
           // Determine system prompt
@@ -739,7 +762,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
           $container.find('#anthropic-prompt').val('');
           if (guard.truncated) {
             self.appendSystemNote(formatting.formatWarningMessage(
-              'Chart data was truncated to fit the ' + config.API.MODEL + ' context window.'));
+              'Chart data was truncated to fit the ' + anthropicAPI.resolveActiveModel() + ' context window.'));
           }
 
           // Follow up on the most recent assistant response (if any) so the
@@ -812,7 +835,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       processAnthropicRequest: function(appId, requestData, $thinking, chartSig) {
         var self = this;
         // Pin the model at send time so the footer credits whoever actually answered.
-        var modelAtSend = config.API.MODEL;
+        var modelAtSend = anthropicAPI.resolveActiveModel();
 
         // Shared completion path for both transports: render the markdown once,
         // attach footers, and persist the turn.
@@ -889,7 +912,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       // Falls back to normal markdown when no valid spec is returned.
       processChartSuggestion: function(appId, requestData, $thinking, chartSig) {
         var self = this;
-        var modelAtSend = config.API.MODEL;
+        var modelAtSend = anthropicAPI.resolveActiveModel();
         activeRequest = anthropicAPI.sendToAnthropic(
           appId,
           requestData,
@@ -1026,11 +1049,28 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
 
       // Surface config-validation problems in the panel (E07 §4.2). Non-fatal: names
       // the offending keys so the user can fix them in Edit object → Settings.
-      showConfigError: function(errors) {
-        if (!$container || !errors || !errors.length) return;
-        this.appendSystemNote(formatting.formatErrorMessage(
+      // Show (or clear) the configuration banner. Called from every owner paint, so it
+      // must be idempotent in BOTH directions: an empty/absent error list hides it again.
+      // It used to be appended as a chat message, which had no clear path at all — a
+      // banner raised before the object's URLs were applied stayed for the whole session.
+      renderConfigStatus: function(errors) {
+        if (!ownsWidget) return;
+        var $panel = panelContainer();
+        if (!$panel) return;
+        var $banner = $panel.find('#anthropic-config-banner');
+        if (!$banner.length) return;
+        if (!errors || !errors.length) {
+          $banner.empty().hide();
+          return;
+        }
+        $banner.html(formatting.formatErrorMessage(
           'Configuration problem — the assistant may not work until this is fixed: ' +
-          errors.join('; ')));
+          errors.join('; '))).show();
+      },
+
+      /** @deprecated Kept as an alias — use renderConfigStatus, which can also clear. */
+      showConfigError: function(errors) {
+        this.renderConfigStatus(errors);
       },
 
       scrollConversation: function() {
@@ -1108,6 +1148,13 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       // it across sheet navigation. Idempotent and safe to call before init or twice —
       // every step guards on presence — so paint churn / a missing destroy hook can't
       // throw. Called from the extension's `destroy` hook (main.js).
+      // True when this module instance has initialised and owns the widget. paint() uses
+      // it instead of a DOM lookup: a fresh module set must rebuild the widget it can
+      // actually drive, rather than adopting one wired to an instance it cannot see.
+      isInitialized: function() {
+        return ownsWidget;
+      },
+
       teardown: function() {
         // 1. Abort any in-flight request (E02 handle) so it can't write into DOM that
         //    is about to be removed.
@@ -1126,6 +1173,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         selectionModeActive = false;
         $('#anthropic-floating-widget').remove();
         $container = null;
+        ownsWidget = false;
       },
 
       startNewChat: function() {
@@ -1157,7 +1205,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
             : '') +
           '</div></details>' +
           '<div class="answered-by">You are talking to <strong>' +
-          escapeHtml(anthropicAPI.getModelLabel(modelId || config.API.MODEL)) +
+          escapeHtml(anthropicAPI.getModelLabel(modelId || anthropicAPI.resolveActiveModel())) +
           '</strong></div>' +
           '</div>';
       },

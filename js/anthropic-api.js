@@ -25,7 +25,7 @@ define(['jquery', './config', './data-format', './log'], function($, config, dat
      * @returns {{id: string, label: string, hint?: string, local?: boolean, tag?: string}}
      */
     getModelEntry: function(id) {
-      var wanted = id || config.API.MODEL;
+      var wanted = id || this.resolveActiveModel();
       var found = (config.API.MODELS || []).filter(function(m) { return m.id === wanted; })[0];
       return found || { id: wanted, label: wanted };
     },
@@ -53,23 +53,32 @@ define(['jquery', './config', './data-format', './log'], function($, config, dat
 
     /** True when the given (or active) model's transport is configured. */
     isModelAvailable: function(id) {
-      var wanted = id || config.API.MODEL;
+      var wanted = id || config.API.MODEL_PICK || config.API.MODEL_DEFAULT;
       return this.availableModels().some(function(m) { return m.id === wanted; });
     },
 
     /**
-     * The active model, corrected to an available one. Called before rendering and before
-     * building a request so a model whose transport was removed (proxy URL blanked while
-     * Haiku was selected) can never stay active. Returns the resolved id.
+     * THE active model: the in-panel pick if there is one, otherwise the object's
+     * "Default model" property — corrected to something reachable when the chosen model's
+     * backend is switched off.
+     *
+     * PURE by design. It reads state and returns an id; it never assigns and never
+     * persists. An earlier version wrote its correction back into the stored choice, so a
+     * correction computed against a not-yet-applied endpoint (blank Proxy URL, Claude
+     * therefore "unavailable") permanently replaced the user's model and no property edit
+     * could undo it. Displaying and requesting a substitute is fine; recording one is not
+     * — the real choice must come back the moment its backend does.
+     * @returns {string} model id
      */
     resolveActiveModel: function() {
-      if (this.isModelAvailable()) return config.API.MODEL;
-      var fallback = this.availableModels()[0];
-      if (fallback && fallback.id !== config.API.MODEL) {
-        config.API.MODEL = fallback.id;
-        if (typeof config.saveModelState === 'function') config.saveModelState();
-      }
-      return config.API.MODEL;
+      var pick = config.API.MODEL_PICK;
+      var def = config.API.MODEL_DEFAULT;
+      if (pick && this.isModelAvailable(pick)) return pick;
+      // An unreachable pick falls back to the object's own default before anything else —
+      // registry order must never decide which model an operator gets.
+      if (def && this.isModelAvailable(def)) return def;
+      var available = this.availableModels();
+      return (available[0] && available[0].id) || pick || def;
     },
 
     /** Human-readable name for a model id, e.g. "Ministral 3 8B (local, via Ollama)". */
@@ -163,7 +172,7 @@ define(['jquery', './config', './data-format', './log'], function($, config, dat
       } else {
         // Anthropic Messages shape: system is a top-level field.
         payload = {
-          model: config.API.MODEL,
+          model: this.resolveActiveModel(),
           max_tokens: config.API.MAX_TOKENS,
           system: systemPrompt,
           messages: priorTurns.concat([thisTurn])
@@ -777,7 +786,7 @@ define(['jquery', './config', './data-format', './log'], function($, config, dat
           { role: "user", content: testData.userPrompt }
         ]
       } : {
-        model: config.API.MODEL,
+        model: this.resolveActiveModel(),
         max_tokens: 100, // Small response for test
         messages: [{
           role: "user",

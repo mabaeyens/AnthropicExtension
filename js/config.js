@@ -14,6 +14,11 @@ define([], function() {
   // is no window, and because sessionStorage access throws outright in some privacy
   // modes rather than returning null.
   var MODEL_STATE_KEY = 'anthropicExtension.model';
+  // Schema stamp for the stored choice. Bump it whenever the meaning of the stored fields
+  // changes, so entries written by an older build are ignored rather than reinterpreted —
+  // a stale locked pick from a previous build otherwise outlives the fix that addressed it
+  // and keeps overriding the object's "Default model" property for the whole tab session.
+  var MODEL_STATE_VERSION = 4;
   function hasSessionStorage() {
     try { return typeof window !== 'undefined' && !!window.sessionStorage; }
     catch (e) { return false; }
@@ -31,8 +36,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.5.3',
-    BUILD: 40,
+    VERSION: '0.5.4',
+    BUILD: 44,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -42,18 +47,26 @@ define([], function() {
       // browser never holds the API key and never calls api.anthropic.com directly —
       // the proxy holds the key server-side (P01) and authenticates the caller by their
       // Qlik session (P02). Overridden per-instance from the "Proxy URL" property.
-      PROXY_URL: 'https://localhost:3000/api/anthropic',
-      // Active model. Seeded from the extension's "Model" property, then owned by
-      // the in-panel model picker for the rest of the session (see MODEL_LOCKED).
-      MODEL: 'claude-haiku-4-5',
-      // Set to true once the user picks a model in the chat panel, so paint()
-      // stops re-applying the properties-panel value over their choice.
-      MODEL_LOCKED: false,
-      // Last value seen in the "Default model" property. paint() compares against
-      // it so an actual CHANGE to the property counts as an explicit user action
-      // and re-seeds the model (clearing MODEL_LOCKED), while the repaints Qlik
-      // fires on every selection event do not.
-      MODEL_FROM_PROPS: null,
+      // Blank by default, and BLANK MEANS DISABLED: the models a backend serves are
+      // withheld when its URL is empty. Both URLs are set per-instance from the object's
+      // properties; shipping a localhost literal here only made an unconfigured object
+      // look configured and fail at request time.
+      PROXY_URL: '',
+      // ── The active model is derived, never stored ────────────────────────────────
+      // Exactly two facts are recorded, and both are set only by an explicit user action:
+      //   MODEL_DEFAULT — the object's "Default model" property (the session default)
+      //   MODEL_PICK    — the in-panel "Pick model" choice; null means "follow the property"
+      // The model in effect is anthropicAPI.resolveActiveModel() = PICK || DEFAULT,
+      // corrected at read time for a backend that is switched off. Nothing else writes
+      // them, so an unreachable backend can never silently rewrite the user's choice —
+      // which is precisely what a self-correcting, self-persisting active model did.
+      MODEL_DEFAULT: 'claude-haiku-4-5',
+      MODEL_PICK: null,
+      // The shipped default, frozen. MODEL_DEFAULT is overwritten at runtime (property,
+      // restored session state), so the properties-panel dropdown must not use it as its
+      // defaultValue — a NEW object would then inherit whatever the last session left
+      // behind instead of a stable, documented default.
+      MODEL_SHIPPED_DEFAULT: 'claude-haiku-4-5',
       // The model registry — drives BOTH the properties-panel dropdown and the
       // in-panel picker. Entries with local:true are served by Ollama (OpenAI
       // chat-completions format, no API key); `tag` is the Ollama model name.
@@ -72,10 +85,11 @@ define([], function() {
       // Local-model backend (Ollama via the HTTPS proxy). Used when MODEL === 'ministral-local'.
       // Requests are sent in OpenAI chat-completions format; no API key is required.
       LOCAL: {
-        // Proxy route that forwards to the local Ollama server. Overridden per-instance
-        // from the extension's "Local model URL" property. On QSEoW (HTTPS) this must be an
-        // HTTPS endpoint — the browser cannot call http://localhost:11434 directly.
-        URL: 'https://localhost:3000/api/ollama',
+        // Proxy route that forwards to the local Ollama server, set per-instance from the
+        // "Local model URL" property. Blank means the local models are unavailable. On
+        // QSEoW (HTTPS) it must be an HTTPS endpoint — the browser cannot call
+        // http://localhost:11434 directly.
+        URL: '',
         // Fallback Ollama model name, used only if the selected entry has no `tag`.
         // 'ministral-3-demo' is a derived model with num_ctx baked to 8192 (see CHANGELOG
         // for the one-line Modelfile) — 8k keeps the 4 GB-GPU demo responsive (~6-7 tok/s)
@@ -184,48 +198,53 @@ define([], function() {
       return D;
     },
 
-    // ── Session-sticky model choice ───────────────────────────────────────────
-    // The floating widget is a body-global singleton that outlives sheet navigation,
-    // but the AMD modules behind it are NOT guaranteed to: navigating to a sheet where
-    // the extension object is not placed can leave the widget standing while a fresh
-    // module set is instantiated from the literals above. API.MODEL then reverts to the
-    // shipped default (Haiku) and the picker redraws from it — the model silently
-    // changed under the user without them touching anything.
+    // ── Session state ─────────────────────────────────────────────────────────
+    // Only USER-SET FACTS are mirrored: the property default, the in-panel pick, and the
+    // two endpoints. Never a derived value — an earlier version stored the corrected
+    // active model, and one correction computed against a not-yet-applied endpoint then
+    // outlived the tab, permanently overriding the property.
     //
-    // So the effective choice is mirrored into sessionStorage, which any fresh instance
-    // reads at load. sessionStorage (not localStorage) is deliberate: the choice sticks
-    // for the browser tab, and a new session starts from the object's "Default model"
-    // property again, which is the documented precedence.
+    // The endpoints ride along because availability is judged against them: without them
+    // a restore would evaluate "is this model reachable?" against the blank literals
+    // above until the first paint(), i.e. against the wrong inputs.
+    //
+    // sessionStorage, not localStorage: the choice lasts for the browser tab, and a new
+    // session starts from the object's "Default model" property again.
     saveModelState: function() {
       if (!hasSessionStorage()) return;
       try {
         window.sessionStorage.setItem(MODEL_STATE_KEY, JSON.stringify({
-          model: this.API.MODEL,
-          locked: !!this.API.MODEL_LOCKED,
-          fromProps: this.API.MODEL_FROM_PROPS || null
+          v: MODEL_STATE_VERSION,
+          modelDefault: this.API.MODEL_DEFAULT || null,
+          modelPick: this.API.MODEL_PICK || null,
+          proxyUrl: this.API.PROXY_URL || '',
+          localUrl: (this.API.LOCAL && this.API.LOCAL.URL) || ''
         }));
-      } catch (e) { /* private mode / quota — the in-memory value still applies */ }
+      } catch (e) { /* private mode / quota — the in-memory values still apply */ }
     },
 
-    // Restore a previously saved choice over the literals. Returns true when it applied.
-    // An id that is no longer in the registry (extension upgraded, model retired) is
-    // ignored so a stale entry can never pin the panel to a model that cannot answer.
+    // Restore the saved facts over the literals. Returns true when it applied. Ids no
+    // longer in the registry (extension upgraded, model retired) are dropped, so a stale
+    // entry can never pin the panel to a model this build does not ship.
     restoreModelState: function() {
       if (!hasSessionStorage()) return false;
       try {
         var raw = window.sessionStorage.getItem(MODEL_STATE_KEY);
         if (!raw) return false;
         var s = JSON.parse(raw);
-        if (!s || !s.model) return false;
-        var known = this.API.MODELS.some(function(m) { return m.id === s.model; });
-        if (!known) return false;
-        this.API.MODEL = s.model;
-        this.API.MODEL_LOCKED = !!s.locked;
-        // Carrying fromProps over matters: paint() treats "property differs from the
-        // last value seen" as an explicit edit. Without it, the first repaint on the
-        // object's own sheet would look like a property change and overwrite the
-        // user's in-panel pick.
-        this.API.MODEL_FROM_PROPS = s.fromProps || null;
+        if (!s) return false;
+        if (s.v !== MODEL_STATE_VERSION) {
+          // Written by an older build with different field meanings — drop it.
+          try { window.sessionStorage.removeItem(MODEL_STATE_KEY); } catch (e2) {}
+          return false;
+        }
+        var known = function(id) {
+          return !!id && this.API.MODELS.some(function(m) { return m.id === id; });
+        }.bind(this);
+        if (known(s.modelDefault)) this.API.MODEL_DEFAULT = s.modelDefault;
+        this.API.MODEL_PICK = known(s.modelPick) ? s.modelPick : null;
+        if (typeof s.proxyUrl === 'string') this.API.PROXY_URL = s.proxyUrl;
+        if (typeof s.localUrl === 'string') this.API.LOCAL.URL = s.localUrl;
         return true;
       } catch (e) { return false; }
     }

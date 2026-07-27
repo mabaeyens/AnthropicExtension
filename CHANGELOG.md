@@ -10,6 +10,73 @@ All notable changes to this extension are documented here.
 > review what leaves your environment before use. Selecting a **local model** (Ministral via
 > Ollama) keeps inference on-machine.
 
+## [0.5.4] - 2026-07-27
+
+### Fixed
+
+- **A second extension object no longer hijacks the configuration.** `config` is one module
+  singleton shared by every object of this extension in the app, while the properties are
+  per object — so every object's `paint()` wrote the shared state and the last one painted
+  won. Navigating to a sheet holding a second, never-configured object committed that
+  object's untouched dropdown default (`props.model = 'claude-haiku-4-5'`) over the
+  configured model; with a blank Proxy URL that model is unreachable, so the panel fell
+  through to the first available local model, **Ministral 3 8B**. Its blank URLs also
+  produced the permanent *"No endpoint configured"* banner. Exactly one object now owns the
+  shared configuration: an object claims it when there is no owner, when it already is the
+  owner, or when it is **configured** (has a URL property) and the incumbent is not — so a
+  never-configured object can never keep ownership from a real one, whichever paints first.
+  An owner that stops painting (deleted, or on a sheet nobody visits) goes stale after 30 s
+  and a configured object takes over. Non-owners are ignored, with one console warning.
+- **The configuration banner clears itself.** Validation ran once, inside the one-time init
+  block, and the message was appended as a chat message with no clear path — so a banner
+  raised before the owner's URLs were applied stayed for the whole session. It is now a
+  dedicated panel element re-rendered on every owner paint, appearing and disappearing with
+  the actual state.
+
+- **The active model stops changing on its own.** 0.5.3's `resolveActiveModel()` both
+  *assigned* and *persisted* its availability correction. With a blank **Proxy URL** the
+  Claude models are unavailable, so any render — including simply opening the picker —
+  rewrote the stored choice to the first available entry, **Ministral 3 8B**, over the 3B
+  the operator had configured. It also wrote that substitute with the old `MODEL_LOCKED`
+  flag set, which made `paint()` skip both of its property branches: the "Default model"
+  property was then dead for the whole tab session and re-selecting the same value could
+  not repair it. This was the regression behind "it worked until today".
+- **The configuration banner no longer fires on a local-only setup.** `config-validate`
+  still demanded a valid `API.PROXY_URL`, so a deliberately blank Proxy URL raised
+  *"API.PROXY_URL must be a valid URL (the proxy is mandatory)"* in the panel even though
+  the local route was set and working. Each URL is now optional but must be well-formed
+  when set; only having **neither** endpoint is an error.
+
+- **The panel no longer repaints itself from a module instance that knows nothing about
+  the object.** Widget ownership was inferred from the DOM (`#anthropic-floating-widget`
+  exists ⇒ initialised). The widget is appended to `document.body` and outlives sheet
+  navigation, so that check answers "yes" even to a freshly instantiated module set that
+  has never run `paint()`, never seen the object's properties, and still holds the shipped
+  config literals — which it would then render into the picker. Ownership is now module
+  state (`uiController.isInitialized()`): a non-owner renders nothing at all, and an
+  instance that does initialise rebuilds the widget it can actually drive.
+- **An unreachable in-panel pick falls back to the object's Default model**, not to the
+  first entry in the registry — which is how Ministral 3 8B kept displacing a configured 3B.
+
+### Changed
+
+- **The active model is derived, not stored.** `API.MODEL`, `API.MODEL_LOCKED` and
+  `API.MODEL_FROM_PROPS` are replaced by two fields that only an explicit user action
+  writes: `API.MODEL_DEFAULT` (the property) and `API.MODEL_PICK` (the in-panel choice,
+  `null` = follow the property). The model in effect is `anthropicAPI.resolveActiveModel()`
+  = pick or default, corrected for a backend that is switched off. The resolver is **pure**:
+  it may show and use a substitute, but it never records one, so a model comes back the
+  moment its backend does. Session state mirrors only those user-set facts plus the two
+  endpoints (schema `v3`; older entries are discarded).
+- **The properties dropdown lists every model, unfiltered.** A Qlik dropdown whose stored
+  value is missing from its options renders blank and can commit an empty `props.model`,
+  dropping the object's default. Availability filtering applies to the chat panel's picker
+  only; the settings notices say which backend is off.
+- **`config.js` ships blank `API.PROXY_URL` / `API.LOCAL.URL`.** The localhost literals made
+  an unconfigured object look configured and pushed the failure to request time — and, since
+  a restore happens before the first `paint()`, availability was briefly judged against them
+  rather than against the object's properties.
+
 ## [0.5.3] - 2026-07-27
 
 ### Added

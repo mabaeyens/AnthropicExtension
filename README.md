@@ -140,11 +140,11 @@ Advanced defaults can still be tuned in `js/config.js`:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `API.PROXY_URL` | `https://localhost:3000/api/anthropic` | Proxy route for hosted (Anthropic) models — the mandatory transport; overridden by the Proxy URL property |
-| `API.MODEL` | `claude-haiku-4-5` | Model the session starts with (Claude id, or `ministral-local` / `ministral-local-3b`) |
+| `API.PROXY_URL` | _(blank)_ | Proxy route for hosted (Anthropic) models, set by the Proxy URL property. **Blank = Claude switched off** and its models withheld from the pickers |
+| `API.MODEL_DEFAULT` | `claude-haiku-4-5` | Model the session starts with, seeded from the Default model property. `API.MODEL_PICK` (null by default) holds an in-panel choice; the model in effect is `resolveActiveModel()` = pick or default, corrected for a backend that is off |
 | `API.MODELS` | 5 entries | Model **registry** — `{ id, label, hint, local, tag }`. Drives both the properties dropdown and the in-panel picker, so they can't drift apart. Add a model here and it appears in both |
 | `API.MAX_TOKENS` | `4000` | Maximum tokens in the response |
-| `API.LOCAL.URL` | `https://localhost:3000/api/ollama` | Proxy route for the local model (Ollama) |
+| `API.LOCAL.URL` | _(blank)_ | Proxy route for the local models (Ollama), set by the Local model URL property. **Blank = local models switched off** |
 | `API.LOCAL.MODEL_TAG` | `ministral-3-demo` | Fallback Ollama model name, used only if a registry entry has no `tag` |
 | `API.LOCAL.SYSTEM_SUFFIX` | brevity instruction | Appended to the system prompt **on local calls only** (v0.5.1) — keeps Ministral answers to a few bullets/sentences, since a verbose answer at a few tokens/second runs for minutes. Hosted models are unaffected |
 | `CHAT.STREAM` | `true` | Default for the streaming toggle |
