@@ -21,8 +21,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.5.1',
-    BUILD: 35,
+    VERSION: '0.5.2',
+    BUILD: 37,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -39,6 +39,11 @@ define([], function() {
       // Set to true once the user picks a model in the chat panel, so paint()
       // stops re-applying the properties-panel value over their choice.
       MODEL_LOCKED: false,
+      // Last value seen in the "Default model" property. paint() compares against
+      // it so an actual CHANGE to the property counts as an explicit user action
+      // and re-seeds the model (clearing MODEL_LOCKED), while the repaints Qlik
+      // fires on every selection event do not.
+      MODEL_FROM_PROPS: null,
       // The model registry — drives BOTH the properties-panel dropdown and the
       // in-panel picker. Entries with local:true are served by Ollama (OpenAI
       // chat-completions format, no API key); `tag` is the Ollama model name.

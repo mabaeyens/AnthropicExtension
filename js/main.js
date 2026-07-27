@@ -110,7 +110,18 @@ define([
         // the chat panel, MODEL_LOCKED is set and we stop clobbering their choice —
         // paint() runs on every selection event, which would otherwise silently
         // revert the model mid-conversation.
-        if (layout.props.model && !config.API.MODEL_LOCKED) {
+        //
+        // Exception: actually CHANGING the property is an explicit user action and
+        // must win over an earlier in-panel pick (otherwise the dropdown is dead for
+        // the rest of the page load and the picker looks stuck on the old model).
+        // MODEL_FROM_PROPS holds the last value we saw, so a change is detectable
+        // and a plain repaint is not.
+        if (layout.props.model && layout.props.model !== config.API.MODEL_FROM_PROPS) {
+          config.API.MODEL_FROM_PROPS = layout.props.model;
+          config.API.MODEL = layout.props.model;
+          config.API.MODEL_LOCKED = false;
+          uiController.renderModelPicker();
+        } else if (layout.props.model && !config.API.MODEL_LOCKED) {
           config.API.MODEL = layout.props.model;
           uiController.renderModelPicker();
         }

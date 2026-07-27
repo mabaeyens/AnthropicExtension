@@ -5,6 +5,25 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
     let $container = null;
     let selectionModeActive = false;
 
+    // Resolve the panel container against the LIVE DOM. `$container` is assigned in
+    // initUI, but the render helpers that paint() calls (renderModelPicker,
+    // renderApiKeyStatus) can run when it is still null — first paint happens before
+    // initUI — or when it references a widget that is no longer in the document (the
+    // module outliving its widget, e.g. after a re-injection). Both cases previously
+    // hit an `if (!$container) return` and made the render a SILENT no-op, which is
+    // what left the model picker showing a stale model while config.API.MODEL had
+    // already changed. Re-query instead of giving up; teardown() removes the widget,
+    // so there is genuinely nothing to find after it and this still returns null.
+    function panelContainer() {
+      if ($container && $container.length && $container.closest('body').length) {
+        return $container;
+      }
+      const $found = $('#anthropic-floating-widget').last()
+        .find('.anthropic-extension-container');
+      $container = $found.length ? $found : null;
+      return $container;
+    }
+
     // Array of { id, title, data } — supports multiple chart selections
     let selectedCharts = [];
     const MAX_CHARTS = 5;
@@ -376,8 +395,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       // only warns when the required proxy URL is not configured. Kept under the
       // old name/#area to avoid churn in call sites. Safe to call from paint().
       renderApiKeyStatus: function() {
-        if (!$container) return;
-        var $area = $container.find('#api-key-status-area');
+        var $panel = panelContainer();
+        if (!$panel) return;
+        var $area = $panel.find('#api-key-status-area');
         if (!$area.length) return;
 
         var url = anthropicAPI.isLocalModel() ? config.API.LOCAL.URL : config.API.PROXY_URL;
@@ -399,14 +419,23 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
 
       /** Repaint the picker button, the "talking to" line, and the menu items. */
       renderModelPicker: function() {
-        if (!$container) return;
+        var $panel = panelContainer();
+        if (!$panel) return;
         var activeId = config.API.MODEL;
         var label = anthropicAPI.getModelLabel(activeId);
 
-        $container.find('#anthropic-active-model')
+        $panel.find('#anthropic-active-model')
           .html('Talking to <strong>' + escapeHtml(label) + '</strong>');
 
-        var $menu = $container.find('#anthropic-model-menu');
+        // The button itself carries the active model too — the drop-up menu is only
+        // visible while open, so without this the panel can show no model at all.
+        // Short label (no hint) so the button doesn't outgrow the submit row.
+        $panel.find('#anthropic-model-button')
+          .attr('title', 'Choose which model answers — currently ' + label)
+          .html(escapeHtml(anthropicAPI.getModelEntry(activeId).label) +
+                ' <span class="model-caret">&#9662;</span>');
+
+        var $menu = $panel.find('#anthropic-model-menu');
         if (!$menu.length) return;
         var html = '<div class="model-menu-title">Choose a model</div>';
         (config.API.MODELS || []).forEach(function(m) {

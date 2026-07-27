@@ -10,6 +10,36 @@ All notable changes to this extension are documented here.
 > review what leaves your environment before use. Selecting a **local model** (Ministral via
 > Ollama) keeps inference on-machine.
 
+## [0.5.2] - 2026-07-27
+
+### Fixed
+
+- **Model picker no longer shows a stale model.** Selecting a model in the extension's
+  **Default model** property left the panel saying “Talking to Haiku 4.5” (and the menu
+  checkmark on the old entry) even though `config.API.MODEL` had already changed — so requests
+  went to one model while the UI named another. Two independent causes:
+  - `renderModelPicker()` / `renderApiKeyStatus()` returned early whenever the module-level
+    `$container` was null or pointed at a widget no longer in the document, silently skipping
+    the repaint. They now resolve the container against the live DOM on each call.
+  - Once the in-panel **Pick model** menu had been used, `MODEL_LOCKED` made `paint()` ignore
+    the properties dropdown for the rest of the page load, so changing it did nothing and only
+    a browser reload recovered. An actual **change** to the property now counts as an explicit
+    user action: it re-seeds the model and clears the lock, while the repaints Qlik fires on
+    every selection event still leave a mid-conversation in-panel pick alone
+    (`config.API.MODEL_FROM_PROPS` tracks the last value seen).
+
+### Changed
+
+- **The “Pick model” button now names the active model** (e.g. “Ministral 3 3B ▾”) instead of a
+  fixed “Pick model” label. The drop-up menu is only visible while open, so the active model was
+  otherwise easy to miss.
+
+### Added
+
+- **Regression tests for `paint()`'s model-property handling** (`test/main-paint.test.js`, 3 tests):
+  the property seeds the model, a property change beats an earlier in-panel pick, and an
+  unchanged property on repaint does not revert one.
+
 ## [0.5.1] - 2026-07-25
 
 ### Added
