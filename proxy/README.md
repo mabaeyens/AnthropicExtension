@@ -1,27 +1,55 @@
-# cm-llm-proxy
+# cm-llm-proxy — v2.0.0
 
 > ℹ️ **This proxy now lives in the [AnthropicExtension](../README.md) monorepo**, under `proxy/`.
 > It was previously the standalone `mabaeyens/cm-llm-proxy` repository (now archived); its history
 > was preserved when it was merged here. File issues and PRs against the AnthropicExtension repo.
+>
+> The proxy is versioned and tagged **independently** of the extension: `proxy-vX.Y.Z` here,
+> `vX.Y.Z` for the extension. **Proxy v2.0.0 pairs with extension v0.5.1.** Release notes:
+> [`CHANGELOG.md`](./CHANGELOG.md).
 
-Local HTTPS proxy that forwards requests from the Qlik Sense [AnthropicExtension](../README.md) to the Anthropic API **or to a local Ollama model**.
+HTTPS gateway that sits between the Qlik Sense [AnthropicExtension](../README.md) and the Anthropic
+API **or a local Ollama model**. It holds the Anthropic key server-side and authenticates every
+caller by their Qlik session.
+
+> ## ⚠️ Breaking changes in v2.0.0
+>
+> v2.0.0 turns the demo-grade forwarder into a hardened gateway. If you are upgrading from 1.x:
+>
+> - **Caller authentication is mandatory.** Every `/api/*` request must present a valid Qlik session;
+>   unauthenticated requests are rejected `401` before any upstream call. This requires
+>   `QLIK_SESSION_URL`, `QLIK_CERT`, `QLIK_KEY` and `QLIK_ORIGINS` — the proxy **fails fast at boot**
+>   without them.
+> - **The Anthropic key must be server-side** (`ANTHROPIC_API_KEY` in the environment). Any
+>   client-supplied key header is stripped; there is no pass-through of a browser key.
+>
+> A 1.x proxy will not work with extension v0.5.1: it can't authenticate the caller, and it doesn't
+> propagate client cancellation, so the extension's **Stop** button won't halt inference.
 
 ## Why is this needed?
 
-Qlik Sense Server enforces CORS restrictions and does not allow direct calls to external APIs from the browser. This proxy runs on the Qlik server (or locally) and acts as a secure intermediary.
+Three reasons, in order of importance:
+
+1. **Credential custody & access control.** The Anthropic key never reaches the browser — the proxy
+   injects it per request and only after validating the caller's Qlik session, so a client can't
+   simply reach the endpoint and spend the key.
+2. **CORS / same-origin.** Qlik Sense Server does not allow direct calls to external APIs from the
+   browser. The proxy runs on the Qlik node (or locally) and acts as the intermediary.
+3. **Mixed content.** An HTTPS Qlik page cannot call a plain-HTTP local Ollama server directly, so
+   `/api/ollama` bridges it over HTTPS.
 
 ```
 Qlik Sense (browser) → https://localhost:3000/api/anthropic → api.anthropic.com
 Qlik Sense (browser) → https://localhost:3000/api/ollama    → http://localhost:11434 (Ollama)
 ```
 
-The `/api/ollama` route additionally bypasses **mixed-content** blocking: an HTTPS Qlik page cannot
-call a plain-HTTP local Ollama server directly, so it goes through this HTTPS proxy instead.
-
 ## Requirements
 
 - Node.js >= 18
-- SSL certificates for `localhost:3000` (see Certificates section)
+- SSL certificates for the proxy hostname (see Certificates section)
+- **Qlik session validation:** reachable QPS endpoint (`QLIK_SESSION_URL`) plus Qlik client
+  certificate/key (`QLIK_CERT` / `QLIK_KEY`) for mutual TLS, and the hub origin(s) in `QLIK_ORIGINS`
+- An **Anthropic API key** in `ANTHROPIC_API_KEY` (not needed for the `/api/ollama` route only)
 
 ## Setup
 
@@ -67,6 +95,10 @@ All settings are configured via `.env` (copied from `.env.example`):
 
 | Variable | Description | Default |
 |---|---|---|
+| `ANTHROPIC_API_KEY` | **Required.** Anthropic key, injected server-side per request | _(none — boot fails)_ |
+| `QLIK_SESSION_URL` | **Required.** QPS session endpoint used to validate the caller, e.g. `https://<qlik-host>:4243/qps/session`. The host **must match a SAN of the QPS certificate** — QSEoW uses the **short hostname**, not the FQDN | _(none — boot fails)_ |
+| `QLIK_CERT` / `QLIK_KEY` | **Required.** Qlik client certificate/key for mutual TLS to QPS | _(none — boot fails)_ |
+| `QLIK_SESSION_COOKIE` | Cookie carrying the session; set to `X-Qlik-Session-<prefix>` for a named virtual proxy | `X-Qlik-Session` |
 | `QLIK_ORIGINS` | Comma-separated CORS origin allowlist (exact match); `QLIK_ORIGIN` still accepted as a legacy fallback | `https://your-qlik-server` |
 | `PORT` | Proxy server port | `3000` |
 | `OLLAMA_URL` | Local Ollama OpenAI-compatible endpoint (for `/api/ollama`) | `http://localhost:11434/v1/chat/completions` |
@@ -138,18 +170,28 @@ sends the Qlik session **cookie** automatically (the extension calls with `crede
 the proxy reads it from the `X-Qlik-Session` cookie — for a **named virtual proxy** set
 `QLIK_SESSION_COOKIE=X-Qlik-Session-<prefix>`. The `x-qlik-session` **header** remains an explicit
 override for deployments that mint a session ticket the extension can read.
+
+> ⚠️ **QPS gotchas (verified against a live QSEoW node).** QPS rejects any API call without an XSRF
+> key — v2.0.0 sends a 16-char `xrfkey` in both the query string and the `X-Qlik-Xrfkey` header.
+> Before that fix QPS answered `403 "XSRF prevention check failed"`, which the proxy mapped to an
+> auth error and so rejected **every** session, valid or not. Equally, `QLIK_SESSION_URL`'s host must
+> match a SAN of the QPS certificate: QSEoW issues for the **short hostname**, so using the FQDN
+> fails validation for everyone.
+
 The `/api/ollama` route needs **no** API key; it requires a running local [Ollama](https://ollama.com)
 server (e.g. `ollama pull ministral-3:8b`). Local inference is slower than the hosted API, so this
 route uses a 5-minute timeout.
 
-### Streaming (v1.2.0+)
+### Streaming & cancellation
 
 Both POST routes stream when the request body sets `"stream": true`. The upstream response is piped
 through **untouched** as `text/event-stream`, so the client renders tokens as they arrive instead of
-waiting for the whole answer — which matters most on the slow local path. Earlier versions buffered
-every response, so a client asking to stream still received the answer in one lump.
+waiting for the whole answer — which matters most on the slow local path. (Streaming landed in
+v1.2.0; before that every response was buffered, so a client asking to stream still received the
+answer in one lump.)
 
-If the client disconnects (closed tab, cancelled chat, or the extension's **Stop** button), the
+**Client-cancel propagation (v2.0.0).** If the client disconnects (closed tab, cancelled chat, or the
+extension's **Stop** button, added in extension v0.5.1), the
 upstream request is cancelled rather than left generating for nobody — the model actually stops. This
 holds for **both** paths: streaming destroys the piped upstream stream on disconnect, and the buffered
 path aborts the in-flight upstream call (via an `AbortSignal` wired to the response's `close`). This
@@ -181,6 +223,20 @@ both go to stdout for a log shipper. Neither log ever contains secrets or reques
 the app log carries request-id, user, route, status and latency; the audit log carries who-called-
 what-when (user, route, model, status). Boot fails fast with a precise message if any required
 variable is missing or a cert path is unreadable.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| Proxy exits at startup with a config message | A required variable is missing or a cert path is unreadable — boot validation fails fast by design (`ANTHROPIC_API_KEY`, `QLIK_SESSION_URL`, `QLIK_CERT`, `QLIK_KEY`, `QLIK_ORIGINS`) |
+| **Every** request returns `401` | Session validation is failing for all callers: check `QLIK_SESSION_URL`'s host against the QPS certificate SANs (short hostname on QSEoW), the client cert/key, and that you're on v2.0.0+ (earlier builds omitted the QPS `xrfkey`) |
+| A single user gets `401` | Their Qlik session cookie isn't reaching the proxy — confirm same-site access and, for a named virtual proxy, `QLIK_SESSION_COOKIE=X-Qlik-Session-<prefix>` |
+| `403 Model not allowed` | The requested model isn't on the server-side allowlist (`ALLOWED_*_MODELS`) |
+| `413` / validation rejection | Body exceeds the size cap or fails the route's schema |
+| `503` with `Retry-After` | The concurrency queue is full or the request timed out waiting; also returned by `/ready` during graceful drain |
+| Browser shows a status-less XHR failure | The proxy's TLS certificate isn't trusted — see Certificates |
+| CORS rejection | `QLIK_ORIGINS` is compared **exactly**; `https://localhost` will not match a hub served from `https://myserver` |
+| Model keeps generating after the client stops | You're on a pre-2.0.0 proxy — cancel propagation was added in v2.0.0 |
 
 ## Related repositories
 

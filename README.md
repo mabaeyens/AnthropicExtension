@@ -7,15 +7,17 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 >
 > The extension is **proxy-only**: the browser holds **no API key** and **never** calls
 > `api.anthropic.com` directly. Every request goes to the **hardened proxy** under
-> [`proxy/`](./proxy), which holds the Anthropic key server-side and authenticates the caller by their
-> **Qlik session**. The direct-browser transport, the bundled crypto, and the API-key property have
-> been removed. You **must deploy the proxy** and set a **Proxy URL** (and, for local models, a
-> **Local model URL**) in the extension settings — see [Proxy (required)](#proxy-required) and
-> [`proxy/README.md`](./proxy/README.md) (its `scripts/setup.ps1` automates the install).
+> [`proxy/`](./proxy) (**v2.0.0**), which holds the Anthropic key server-side and authenticates the
+> caller by their **Qlik session**. The direct-browser transport, the bundled crypto, and the
+> API-key property have been removed. You **must deploy the proxy** and set a **Proxy URL** (and, for
+> local models, a **Local model URL**) in the extension settings — see
+> [Proxy (required)](#proxy-required) and [`proxy/README.md`](./proxy/README.md) (its
+> `scripts/setup.ps1` automates the install). The proxy is versioned and tagged independently of the
+> extension (`proxy-vX.Y.Z` vs `vX.Y.Z`); **extension v0.5.1 pairs with proxy v2.0.0**.
 
 > ## ⚠️ Demo only — no warranty, no liability
 >
-> This is a **demonstration asset (v0.5.0)**, not a supported Qlik offering or product. It is **not** hardened for
+> This is a **demonstration asset (extension v0.5.1, proxy v2.0.0)**, not a supported Qlik offering or product. It is **not** hardened for
 > production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
 > accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
 > customer, production, or other environment. **Use entirely at your own risk.**
@@ -48,9 +50,10 @@ Adds a floating AI assistant panel to any Qlik Sense dashboard. The user selects
 visualizations, asks questions in natural language, and receives model-generated analysis rendered as
 a **Markdown chat thread** with memory across the conversation. Answers **stream in token by token**
 as they are generated. The assistant can also **suggest a Qlik chart** from its answer and **create
-it** — preview it in the panel and add it to the current sheet (in Edit mode). On the first request,
-the extension sends the app's **data-model structure** (real table and field names, plus master
-dimension/measure definitions) so the model can interpret the chart in context.
+it** — preview it in the panel and add it to the current sheet (in Edit mode). A generating answer
+can be halted at any time with the **Stop** button, which keeps the text produced so far. On the
+first request, the extension sends the app's **data-model structure** (real table and field names,
+plus master dimension/measure definitions) so the model can interpret the chart in context.
 
 **Models are chosen in the chat panel**, not buried in the properties: a **Pick model** button next
 to *Submit* and *Suggest a chart* switches between Claude (Haiku 4.5 / Sonnet 4.6 / Opus 4.8) and the
@@ -77,8 +80,10 @@ support it here.
 ## Requirements
 
 - Client-managed Qlik Sense on Windows — Desktop or Enterprise (QSEoW) ≥ 3.0 (not Qlik Cloud)
-- The **hardened proxy deployed and reachable** (it holds the Anthropic API key and authenticates the
-  Qlik session) — see [`proxy/`](./proxy). The proxy is **required**; there is no direct-browser mode.
+- The **hardened proxy (v2.0.0) deployed and reachable** (it holds the Anthropic API key and
+  authenticates the Qlik session) — see [`proxy/`](./proxy). The proxy is **required**; there is no
+  direct-browser mode. v2.0.0 or later is needed: earlier proxies don't authenticate the caller and
+  don't propagate client cancellation (**Stop**).
 - The **Anthropic API key** — configured **on the proxy** (`ANTHROPIC_API_KEY` in its `.env`), not in
   the browser. Not needed for the local-model path.
 - For the local models: a local [Ollama](https://ollama.com) server behind the proxy's `/api/ollama`
@@ -86,10 +91,13 @@ support it here.
 
 ## Download
 
-**Latest release: [v0.5.0](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.5.0)** —
-download `AnthropicExtension-v0.5.0.zip` from the
+**Latest release: [v0.5.1](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.5.1)** —
+download `AnthropicExtension-v0.5.1.zip` from the
 [releases page](https://github.com/mabaeyens/AnthropicExtension/releases). See
 [`CHANGELOG.md`](./CHANGELOG.md) for what changed.
+
+The proxy ships separately as **[proxy-v2.0.0](https://github.com/mabaeyens/AnthropicExtension/releases/tag/proxy-v2.0.0)**
+(source under [`proxy/`](./proxy), notes in [`proxy/CHANGELOG.md`](./proxy/CHANGELOG.md)).
 
 ## Installation
 
@@ -97,7 +105,7 @@ You can either use the packaged release zip or copy the repository folder direct
 
 1. Get the extension into the Qlik Sense extensions directory:
    - **Enterprise (QSEoW)**: in the QMC → **Extensions → Import**, upload
-     `AnthropicExtension-v0.5.0.zip`.
+     `AnthropicExtension-v0.5.1.zip`.
    - **Desktop**: unzip the release into
      `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\` (or copy this repo
      folder there).
@@ -125,6 +133,7 @@ In the chat panel itself:
 | Control | Where | Description |
 |---|---|---|
 | **Pick model** | next to *Submit* / *Suggest a chart* | Switch model mid-session. Changing it asks for confirmation and **clears the conversation** — history can't meaningfully cross models |
+| **Stop** (v0.5.1) | replaces the submit row while generating | Aborts the answer immediately, keeping the text produced so far and marking the message as stopped. It halts **inference**, not just the UI — the proxy propagates the disconnect upstream (needs proxy ≥ 2.0.0) |
 | **Stream the answer as it is generated** | Advanced Options | On by default. Turn it off to wait for the complete response instead |
 
 Advanced defaults can still be tuned in `js/config.js`:
@@ -137,14 +146,15 @@ Advanced defaults can still be tuned in `js/config.js`:
 | `API.MAX_TOKENS` | `4000` | Maximum tokens in the response |
 | `API.LOCAL.URL` | `https://localhost:3000/api/ollama` | Proxy route for the local model (Ollama) |
 | `API.LOCAL.MODEL_TAG` | `ministral-3-demo` | Fallback Ollama model name, used only if a registry entry has no `tag` |
+| `API.LOCAL.SYSTEM_SUFFIX` | brevity instruction | Appended to the system prompt **on local calls only** (v0.5.1) — keeps Ministral answers to a few bullets/sentences, since a verbose answer at a few tokens/second runs for minutes. Hosted models are unaffected |
 | `CHAT.STREAM` | `true` | Default for the streaming toggle |
 | `DATA.MAX_ROWS` | `1000` | Maximum rows sent to the LLM (all data-collection bounds live in `DATA.*`, validated at init) |
 | `LOG_LEVEL` | `DEBUG` | Console verbosity (ERROR/WARN/INFO/DEBUG); overridden by the Log level property |
 
 ## Proxy (required)
 
-Every request goes through the hardened proxy in [`proxy/`](./proxy) — there is no direct-browser
-mode. The proxy:
+Every request goes through the hardened proxy in [`proxy/`](./proxy) (**v2.0.0**) — there is no
+direct-browser mode. The proxy:
 
 - **Holds the Anthropic API key** server-side (`ANTHROPIC_API_KEY`) and strips any client key header,
   so the key is never in the browser.
@@ -156,10 +166,26 @@ mode. The proxy:
   separate audit log; and can run as an auto-restart Windows service.
 - Bridges the local-model path: `/api/ollama` forwards to a plain-HTTP Ollama server from the HTTPS
   Qlik page.
+- **Propagates client cancellation:** when the browser disconnects (closed tab, or the extension's
+  **Stop** button) the upstream call is cancelled so the model stops generating — the streaming path
+  destroys the piped stream, the buffered path aborts the in-flight upstream call via an
+  `AbortSignal` wired to the response `close`.
 
 Deploy it with `proxy/scripts/setup.ps1` (automates Node check, `npm ci`, dev cert, `.env`, and the
 service), then point the extension's **Proxy URL** / **Local model URL** at it. Full setup, config,
-and operations are in [`proxy/README.md`](./proxy/README.md).
+and operations are in [`proxy/README.md`](./proxy/README.md); release notes in
+[`proxy/CHANGELOG.md`](./proxy/CHANGELOG.md).
+
+> **Version pairing.** The proxy ships on its own cadence under `proxy-vX.Y.Z` tags. Extension
+> **v0.5.1** requires **proxy v2.0.0 or later** — v2.0.0 makes Qlik-session auth mandatory, moves the
+> Anthropic key server-side, and adds the cancel propagation that makes **Stop** actually halt
+> inference.
+
+> **Upgrading from a pre-2.0.0 proxy:** v2.0.0 is a breaking release. Every `/api/*` request must now
+> present a valid Qlik session, so `QLIK_SESSION_URL`, `QLIK_CERT`, `QLIK_KEY`, and `QLIK_ORIGINS`
+> must be set in `.env` — the proxy fails fast at boot without them. `ANTHROPIC_API_KEY` must be in
+> the environment; any client-supplied key header is stripped. Note that `QLIK_SESSION_URL`'s host
+> must match a SAN of the QPS certificate (QSEoW uses the **short hostname**, not the FQDN).
 
 ## Local models (Ministral 3 via Ollama)
 
@@ -173,11 +199,11 @@ offline demos or when chart data must **not leave the machine**. Pick **Ministra
 | Ministral 3 3B | `ministral-3b-demo` | Roughly half the memory at comparable speed |
 
 Because a QSEoW dashboard is served over **HTTPS**, the browser cannot call a plain-HTTP local Ollama
-server directly (mixed-content blocking). Requests therefore go through the **cm-llm-proxy**
+server directly (mixed-content blocking). Requests therefore go through the **proxy's**
 `/api/ollama` route over HTTPS, which forwards to Ollama on the same machine:
 
 ```
-Qlik (HTTPS) → https://localhost:3000/api/ollama  (cm-llm-proxy) → http://localhost:11434 (Ollama)
+Qlik (HTTPS) → https://localhost:3000/api/ollama  (proxy v2.0.0) → http://localhost:11434 (Ollama)
 ```
 
 **Setup (on the machine running Ollama):**
@@ -212,6 +238,9 @@ Qlik (HTTPS) → https://localhost:3000/api/ollama  (cm-llm-proxy) → http://lo
 - Each local model's Ollama tag lives in its `API.MODELS` registry entry (`tag`). The endpoint and
   timeout are in `API.LOCAL` (`URL`, `TIMEOUT` = 5 min), and the context guard in
   `API.CONTEXT_WINDOWS` (`8192` — keep this ≤ the model's baked `num_ctx`).
+- As of **v0.5.1** a brevity instruction (`API.LOCAL.SYSTEM_SUFFIX`) is appended to the system prompt
+  on local calls only, so Ministral answers in a few bullets/sentences instead of running for minutes
+  at a few tokens/second. Hosted models are unchanged. The **Stop** button cancels a run outright.
 - Local inference is **slower** than the hosted API, hence the 5-minute timeout. On a 4 GB laptop
   GPU (NVIDIA T1200) expect roughly **6–7 tok/s** for the 8B and **~18 tok/s** for the 3B. Neither
   fits entirely in 4 GB once a browser and Qlik are also using VRAM, so both run partly on the CPU —
@@ -229,6 +258,7 @@ Qlik (HTTPS) → https://localhost:3000/api/ollama  (cm-llm-proxy) → http://lo
 4. Click **"Add Chart"**, choose a visualization and type your question
 5. Optionally switch model with **Pick model** — the active one is shown under the submit row and in
    each answer's footer
+6. Click **Stop** while an answer is generating to halt it and keep what has been produced so far
 
 ## Architecture & data flow
 
@@ -256,7 +286,9 @@ The request path (User → Qlik Sense → **external LLM** → back) is:
    sanitized **once, when the stream ends** (`formatting.js` + bundled `marked.js`). Parsing Markdown
    per token flickers, costs a sanitize pass per chunk, and shows half-written syntax as noise — and
    inserting text rather than HTML means no markup is ever built from partial model output. An
-   in-flight stream is aborted on *New chat* or a model switch. With streaming off (or where it isn't
+   in-flight stream is aborted on **Stop**, *New chat*, or a model switch — and because the proxy
+   propagates the disconnect upstream, the model stops generating too rather than finishing
+   server-side. With streaming off (or where it isn't
    available) the buffered `$.ajax` path renders the whole reply at once. Each answer has a **Copy**
    button and a footer naming the model that produced it, pinned at send time.
 6. **Create a chart (optional, write-back)** — "Suggest a chart" asks the model for a chart spec;
@@ -319,6 +351,8 @@ AnthropicExtension/
 - [x] **Suggest a chart** (live preview) and **add to sheet** (Edit mode; new-sheet fallback)
 - [x] **Proxy-only transport** (v0.5.0) — no API key in the browser; single-flight request lifecycle;
       configurable log verbosity (ERROR/WARN/INFO/DEBUG)
+- [x] **Stop button** (v0.5.1) — aborts a generating answer and halts inference upstream (proxy 2.0.0)
+- [x] **Concise local-model answers** (v0.5.1) — brevity suffix on local calls only
 - [ ] **Map** visualizations (selection / creation) — not yet supported
 - Qlik Cloud — **out of scope** (Cloud already has native AI assistants)
 
