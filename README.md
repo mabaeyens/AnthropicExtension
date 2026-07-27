@@ -124,8 +124,8 @@ extension's properties panel (no code editing required):
 | Property | Default | Description |
 |---|---|---|
 | Default model | `claude-haiku-4-5` | The model each session **starts** with — switch any time with **Pick model** in the chat panel |
-| Proxy URL | _(config default)_ | **Required.** The hardened proxy's Anthropic route, e.g. `https://your-host:3000/api/anthropic`. Leave blank to use the `config.js` default |
-| Local model URL | _(config default)_ | The proxy's Ollama route, used when a local model is selected — see [Local models](#local-models-ministral-3-via-ollama) |
+| Proxy URL | _(config default)_ | **Required for Claude models.** The hardened proxy's Anthropic route, e.g. `https://your-host:3000/api/anthropic`. **Blank disables Claude entirely** — the Claude models are hidden from this dropdown and from the chat panel's picker, and the object's settings say so |
+| Local model URL | _(config default)_ | **Required for local models.** The proxy's Ollama route — see [Local models](#local-models-ministral-3-via-ollama). Blank disables the local models the same way |
 | Log level | `DEBUG` | Browser-console verbosity: **ERROR / WARN / INFO / DEBUG**. Applied live. Lower it to quieten the console once past testing |
 
 In the chat panel itself:

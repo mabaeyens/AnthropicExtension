@@ -30,6 +30,48 @@ define(['jquery', './config', './data-format', './log'], function($, config, dat
       return found || { id: wanted, label: wanted };
     },
 
+    /**
+     * The models this deployment can actually reach. A model is only offered when the
+     * transport it needs is configured: local (Ollama) entries need API.LOCAL.URL, hosted
+     * (Anthropic) entries need API.PROXY_URL. Blanking the "Proxy URL" property is
+     * therefore how an operator turns Claude off entirely — the models disappear from the
+     * properties dropdown and the in-panel picker instead of being offered and then
+     * failing at request time.
+     *
+     * Fail-safe: if NOTHING is configured the full registry is returned rather than an
+     * empty picker, so a fresh install still shows the choices and the existing
+     * "not configured" error explains what to set.
+     * @returns {Array<object>} registry entries, never empty
+     */
+    availableModels: function() {
+      var all = config.API.MODELS || [];
+      var available = all.filter(function(m) {
+        return m.local ? !!(config.API.LOCAL && config.API.LOCAL.URL) : !!config.API.PROXY_URL;
+      });
+      return available.length ? available : all;
+    },
+
+    /** True when the given (or active) model's transport is configured. */
+    isModelAvailable: function(id) {
+      var wanted = id || config.API.MODEL;
+      return this.availableModels().some(function(m) { return m.id === wanted; });
+    },
+
+    /**
+     * The active model, corrected to an available one. Called before rendering and before
+     * building a request so a model whose transport was removed (proxy URL blanked while
+     * Haiku was selected) can never stay active. Returns the resolved id.
+     */
+    resolveActiveModel: function() {
+      if (this.isModelAvailable()) return config.API.MODEL;
+      var fallback = this.availableModels()[0];
+      if (fallback && fallback.id !== config.API.MODEL) {
+        config.API.MODEL = fallback.id;
+        if (typeof config.saveModelState === 'function') config.saveModelState();
+      }
+      return config.API.MODEL;
+    },
+
     /** Human-readable name for a model id, e.g. "Ministral 3 8B (local, via Ollama)". */
     getModelLabel: function(id) {
       var m = this.getModelEntry(id);

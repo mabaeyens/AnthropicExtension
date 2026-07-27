@@ -9,7 +9,17 @@ define([], function() {
    * - Point API.PROXY_URL / API.LOCAL.URL at your deployed hardened proxy
    * - Adjust the MODEL as needed for your use case
    */
-  return {
+  // Where the session-sticky model choice is mirrored (see saveModelState below).
+  // Guarded because the module is also loaded in Node by the unit tests, where there
+  // is no window, and because sessionStorage access throws outright in some privacy
+  // modes rather than returning null.
+  var MODEL_STATE_KEY = 'anthropicExtension.model';
+  function hasSessionStorage() {
+    try { return typeof window !== 'undefined' && !!window.sessionStorage; }
+    catch (e) { return false; }
+  }
+
+  var config = {
     // Debug mode - set to false for production
     DEBUG_MODE: false,  // Change to true to enable verbose console logging
 
@@ -21,8 +31,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.5.2',
-    BUILD: 37,
+    VERSION: '0.5.3',
+    BUILD: 40,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -172,6 +182,58 @@ define([], function() {
         D.MAX_FETCH_CELLS = D.MAX_CELLS_PER_PAGE;
       }
       return D;
+    },
+
+    // ── Session-sticky model choice ───────────────────────────────────────────
+    // The floating widget is a body-global singleton that outlives sheet navigation,
+    // but the AMD modules behind it are NOT guaranteed to: navigating to a sheet where
+    // the extension object is not placed can leave the widget standing while a fresh
+    // module set is instantiated from the literals above. API.MODEL then reverts to the
+    // shipped default (Haiku) and the picker redraws from it — the model silently
+    // changed under the user without them touching anything.
+    //
+    // So the effective choice is mirrored into sessionStorage, which any fresh instance
+    // reads at load. sessionStorage (not localStorage) is deliberate: the choice sticks
+    // for the browser tab, and a new session starts from the object's "Default model"
+    // property again, which is the documented precedence.
+    saveModelState: function() {
+      if (!hasSessionStorage()) return;
+      try {
+        window.sessionStorage.setItem(MODEL_STATE_KEY, JSON.stringify({
+          model: this.API.MODEL,
+          locked: !!this.API.MODEL_LOCKED,
+          fromProps: this.API.MODEL_FROM_PROPS || null
+        }));
+      } catch (e) { /* private mode / quota — the in-memory value still applies */ }
+    },
+
+    // Restore a previously saved choice over the literals. Returns true when it applied.
+    // An id that is no longer in the registry (extension upgraded, model retired) is
+    // ignored so a stale entry can never pin the panel to a model that cannot answer.
+    restoreModelState: function() {
+      if (!hasSessionStorage()) return false;
+      try {
+        var raw = window.sessionStorage.getItem(MODEL_STATE_KEY);
+        if (!raw) return false;
+        var s = JSON.parse(raw);
+        if (!s || !s.model) return false;
+        var known = this.API.MODELS.some(function(m) { return m.id === s.model; });
+        if (!known) return false;
+        this.API.MODEL = s.model;
+        this.API.MODEL_LOCKED = !!s.locked;
+        // Carrying fromProps over matters: paint() treats "property differs from the
+        // last value seen" as an explicit edit. Without it, the first repaint on the
+        // object's own sheet would look like a property change and overwrite the
+        // user's in-panel pick.
+        this.API.MODEL_FROM_PROPS = s.fromProps || null;
+        return true;
+      } catch (e) { return false; }
     }
   };
+
+  // Apply any saved choice before the first render, so the panel never flashes — or
+  // sticks on — the shipped default after a module re-instantiation.
+  try { config.restoreModelState(); } catch (e) { /* never block module load */ }
+
+  return config;
 });

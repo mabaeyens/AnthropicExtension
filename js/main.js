@@ -42,16 +42,36 @@ define([
                   label: "Default model",
                   type: "string",
                   component: "dropdown",
-                  // Built from the model registry so the panel picker and this
-                  // dropdown can never drift apart.
-                  options: config.API.MODELS.map(function (m) {
-                    return { value: m.id, label: m.label + (m.hint ? ' (' + m.hint + ')' : '') };
-                  }),
+                  // Built from the model registry so the panel picker and this dropdown
+                  // can never drift apart. A FUNCTION, not a fixed array: it is evaluated
+                  // when the panel opens, so models whose transport is not configured
+                  // (Claude with a blank Proxy URL) are not offered here either.
+                  options: function () {
+                    return anthropicAPI.availableModels().map(function (m) {
+                      return { value: m.id, label: m.label + (m.hint ? ' (' + m.hint + ')' : '') };
+                    });
+                  },
                   defaultValue: config.API.MODEL
                 },
                 modelHelp: {
                   component: "text",
                   label: "The model each session starts with. Switch models any time with “Pick model” in the chat panel."
+                },
+                // Availability notices live HERE rather than in the chat panel: the person
+                // who can fix a blank URL is the one editing the object.
+                noProxyNote: {
+                  component: "text",
+                  label: "⚠ Proxy URL is blank — Claude models are unavailable and are hidden from the list above and from the chat panel. Set a Proxy URL to enable them.",
+                  show: function (data) {
+                    return !(data && data.props && data.props.proxyUrl);
+                  }
+                },
+                noLocalNote: {
+                  component: "text",
+                  label: "⚠ Local model URL is blank — Ministral (local) models are unavailable and are hidden from the list above and from the chat panel. Set a Local model URL to enable them.",
+                  show: function (data) {
+                    return !(data && data.props && data.props.localUrl);
+                  }
                 },
                 proxyUrl: {
                   ref: "props.proxyUrl",
@@ -62,7 +82,7 @@ define([
                 },
                 proxyUrlHelp: {
                   component: "text",
-                  label: "Required. The hardened proxy holds the API key and authenticates your Qlik session — e.g. https://your-qlik-host:3000/api/anthropic. Leave blank to use the config.js default."
+                  label: "Required for Claude models — the hardened proxy holds the API key and authenticates your Qlik session, e.g. https://your-qlik-host:3000/api/anthropic. Leave blank to disable Claude entirely and run local models only."
                 },
                 localUrl: {
                   ref: "props.localUrl",
@@ -73,7 +93,7 @@ define([
                 },
                 localUrlHelp: {
                   component: "text",
-                  label: "Ollama endpoint, used when a local model is selected. Must be HTTPS on QSEoW — e.g. https://localhost:3000/api/ollama."
+                  label: "Required for local models — the proxy's Ollama route, e.g. https://your-qlik-host:3000/api/ollama. Must be HTTPS on QSEoW. Leave blank to disable local models."
                 },
                 logLevel: {
                   ref: "props.logLevel",
@@ -120,22 +140,28 @@ define([
           config.API.MODEL_FROM_PROPS = layout.props.model;
           config.API.MODEL = layout.props.model;
           config.API.MODEL_LOCKED = false;
-          uiController.renderModelPicker();
+          config.saveModelState();   // survive a module re-instantiation (sheet change)
         } else if (layout.props.model && !config.API.MODEL_LOCKED) {
           config.API.MODEL = layout.props.model;
-          uiController.renderModelPicker();
+          config.saveModelState();
         }
-        // Proxy endpoint for hosted models (mandatory — E01). Only override the default
-        // when the property is set, so a blank field keeps the config.js default.
-        if (layout.props.proxyUrl) {
-          config.API.PROXY_URL = layout.props.proxyUrl;
+        // Endpoints. The properties are AUTHORITATIVE, including when blank: a blank URL
+        // means "this backend is not available here" and its models are withheld from
+        // both pickers (anthropicAPI.availableModels), rather than silently falling back
+        // to the config.js default and failing at request time. `props` only carries a
+        // key once the field has been touched, so an untouched object still gets the
+        // config.js defaults.
+        if (Object.prototype.hasOwnProperty.call(layout.props, 'proxyUrl')) {
+          config.API.PROXY_URL = layout.props.proxyUrl || '';
         }
-
-        // Local-model endpoint (Ollama via HTTPS proxy). Only override the default when
-        // the property is set, so a blank field keeps the config.js default.
-        if (layout.props.localUrl) {
-          config.API.LOCAL.URL = layout.props.localUrl;
+        if (Object.prototype.hasOwnProperty.call(layout.props, 'localUrl')) {
+          config.API.LOCAL.URL = layout.props.localUrl || '';
         }
+        // A model whose transport just disappeared must not stay active. Repaint the
+        // picker once, AFTER both the model and the URLs are applied, so it can never
+        // render a half-applied state (new model, old endpoints).
+        anthropicAPI.resolveActiveModel();
+        uiController.renderModelPicker();
 
         // Console log verbosity (js/log.js). Read on every paint so a change takes
         // effect live without a reload.

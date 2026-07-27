@@ -7,6 +7,10 @@ define([], function() {
   return `
 <div id="anthropic-floating-widget">
   <div id="anthropic-panel" class="anthropic-panel">
+    <!-- Resize grip. Top-LEFT because the panel is anchored to the bottom-right of the
+         viewport: dragging this corner outwards (up/left) is the only direction that can
+         actually enlarge it. Wired in makePanelResizable(). -->
+    <div id="anthropic-panel-resize" class="anthropic-panel-resize" title="Drag to resize"></div>
     <div class="anthropic-panel-header">
       <span class="anthropic-panel-title">AI Assistant</span>
       <button id="anthropic-panel-close" class="anthropic-panel-close" title="Close">&#10005;</button>

@@ -318,8 +318,9 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         });
 
         // Let the user drag the panel out of the way (it can otherwise cover
-        // charts during selection).
+        // charts during selection) and resize it to taste.
         this.makePanelDraggable();
+        this.makePanelResizable();
 
         // Placeholder in the sheet object
         $element.html(
@@ -390,6 +391,60 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         });
       },
 
+      // Resize the panel by its top-left grip. The panel is anchored to the bottom-right
+      // of the viewport, so that is the only corner whose outward drag can enlarge it.
+      // Resizing pins the panel to viewport coords (exactly like dragging) and moves its
+      // left/top as the size changes, which keeps the bottom-right corner still. The
+      // explicit width/height also override the stylesheet's 760px / max-height, so the
+      // chosen size sticks for the session (the widget is a body-global singleton).
+      makePanelResizable: function() {
+        var $panel = $('#anthropic-panel');
+        var $grip = $panel.find('#anthropic-panel-resize');
+        if (!$grip.length) return;
+
+        var MIN_W = 380, MIN_H = 260;
+        var resizing = false;
+        var startX = 0, startY = 0, startW = 0, startH = 0, startLeft = 0, startTop = 0;
+
+        // Document-level handlers live only WHILE resizing, so they aren't firing on
+        // every mouse move for the whole session (same contract as the drag handlers).
+        function onMove(e) {
+          if (!resizing) return;
+          // The grip's own corner may travel no further than the viewport edge, and no
+          // closer than MIN_W/MIN_H to the pinned bottom-right corner.
+          var dx = Math.min(Math.max(e.clientX - startX, -startLeft), startW - MIN_W);
+          var dy = Math.min(Math.max(e.clientY - startY, -startTop), startH - MIN_H);
+          $panel.css({
+            width:  (startW - dx) + 'px',
+            height: (startH - dy) + 'px',
+            left:   (startLeft + dx) + 'px',
+            top:    (startTop + dy) + 'px'
+          });
+        }
+        function onUp() {
+          resizing = false;
+          $(document).off('mousemove.anthropicResize mouseup.anthropicResize');
+        }
+
+        $grip.on('mousedown', function(e) {
+          var rect = $panel[0].getBoundingClientRect();
+          startX = e.clientX; startY = e.clientY;
+          startW = rect.width; startH = rect.height;
+          startLeft = rect.left; startTop = rect.top;
+          resizing = true;
+          // Pin to viewport coords and drop the stylesheet's max-width/max-height caps,
+          // which would otherwise clamp the panel mid-drag.
+          $panel.css({ position: 'fixed', left: startLeft + 'px', top: startTop + 'px',
+                       right: 'auto', bottom: 'auto', margin: 0,
+                       width: startW + 'px', height: startH + 'px',
+                       maxWidth: 'none', maxHeight: 'none' });
+          $(document).on('mousemove.anthropicResize', onMove)
+                     .on('mouseup.anthropicResize', onUp);
+          e.preventDefault();
+          e.stopPropagation();   // the header underneath owns dragging
+        });
+      },
+
       // Render the connection status line. The browser holds no API key any more
       // (E01) — the proxy holds it and authenticates the Qlik session. So this now
       // only warns when the required proxy URL is not configured. Kept under the
@@ -421,7 +476,11 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       renderModelPicker: function() {
         var $panel = panelContainer();
         if (!$panel) return;
-        var activeId = config.API.MODEL;
+        // Correct the active model first: a model whose transport is not configured (e.g.
+        // Claude with a blank Proxy URL) must never be shown as active. The panel says
+        // nothing about WHY a model is missing — that explanation lives in the object's
+        // settings, which is where an operator can act on it.
+        var activeId = anthropicAPI.resolveActiveModel();
         var label = anthropicAPI.getModelLabel(activeId);
 
         $panel.find('#anthropic-active-model')
@@ -438,7 +497,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         var $menu = $panel.find('#anthropic-model-menu');
         if (!$menu.length) return;
         var html = '<div class="model-menu-title">Choose a model</div>';
-        (config.API.MODELS || []).forEach(function(m) {
+        anthropicAPI.availableModels().forEach(function(m) {
           html += '<button type="button" class="model-menu-item' +
             (m.id === activeId ? ' is-active' : '') + '" data-model="' + escapeHtml(m.id) + '">' +
             '<span class="model-menu-name">' + escapeHtml(m.label) + '</span>' +
@@ -472,6 +531,8 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
       applyModelChange: function(modelId) {
         config.API.MODEL = modelId;
         config.API.MODEL_LOCKED = true;
+        // Mirror the pick so it survives sheet navigation re-instantiating the modules.
+        config.saveModelState();
         this.startNewChat();
         this.renderModelPicker();
         // Switching to/from a local model changes whether a key is needed.
@@ -1059,6 +1120,7 @@ define(['jquery', 'qlik', './anthropic-api', './data-collector', './formatting',
         // 4. Remove every global document listener this widget attached.
         $(document).off('click.anthropicModel');
         $(document).off('mousemove.anthropicDrag mouseup.anthropicDrag');
+        $(document).off('mousemove.anthropicResize mouseup.anthropicResize');
         // 5. Reset transient UI state and remove the injected widget node so a fresh
         //    paint() re-initialises cleanly with no duplicate widget or listeners.
         selectionModeActive = false;

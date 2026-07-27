@@ -14,8 +14,16 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadAmd } = require('./amd-loader');
 
-function setup() {
+function setup(configOverrides) {
   const config = loadAmd('js/config.js', {});
+  if (configOverrides) Object.assign(config.API, configOverrides);
+  // The REAL anthropic-api, so model availability is exercised rather than mocked.
+  const anthropicAPI = loadAmd('js/anthropic-api.js', {
+    jquery: () => ({}),
+    './config': config,
+    './data-format': {},
+    './log': { debug() {}, warn() {}, error() {} },
+  });
   const rendered = [];   // one entry per renderModelPicker() call
   const uiController = {
     renderModelPicker() { rendered.push(config.API.MODEL); },
@@ -26,7 +34,7 @@ function setup() {
   const main = loadAmd('js/main.js', {
     jquery: () => ({}),
     qlik: { Promise, currApp: () => ({}) },
-    './anthropic-api': {},
+    './anthropic-api': anthropicAPI,
     './data-collector': { init: noop, setupSelectionTracking: noop },
     './ui-controller': uiController,
     './config': config,
@@ -37,8 +45,9 @@ function setup() {
     document: { getElementById: () => ({}) },   // widget already injected
   });
 
-  const paint = (model) => main.paint({}, { props: { model }, qInfo: { qId: 'x' } });
-  return { config, paint, rendered };
+  const paint = (model, props) =>
+    main.paint({}, { props: Object.assign({ model }, props), qInfo: { qId: 'x' } });
+  return { config, anthropicAPI, paint, rendered };
 }
 
 test('the Default model property seeds the model and repaints the picker', async () => {
@@ -61,6 +70,35 @@ test('changing the property overrides an earlier in-panel pick (clears MODEL_LOC
   assert.equal(config.API.MODEL, 'ministral-local-3b');
   assert.equal(config.API.MODEL_LOCKED, false);
   assert.equal(rendered[rendered.length - 1], 'ministral-local-3b');
+});
+
+test('a blank Proxy URL withholds the Claude models', async () => {
+  const { config, anthropicAPI, paint } = setup();
+  await paint('ministral-local-3b', { proxyUrl: '', localUrl: 'https://host:3000/api/ollama' });
+
+  assert.equal(config.API.PROXY_URL, '', 'blank property must not fall back to the default');
+  // Joined, not deepEqual: the module runs in a vm realm, so its arrays are not
+  // reference-equal to this realm's Array.prototype.
+  const ids = anthropicAPI.availableModels().map((m) => m.id).join(',');
+  assert.equal(ids, 'ministral-local,ministral-local-3b');
+  assert.equal(anthropicAPI.isModelAvailable('claude-haiku-4-5'), false);
+});
+
+test('an active model whose transport disappears is swapped for an available one', async () => {
+  const { config, paint } = setup();
+  await paint('claude-haiku-4-5', { proxyUrl: 'https://host:3000/api/anthropic' });
+  assert.equal(config.API.MODEL, 'claude-haiku-4-5');
+
+  // Operator blanks the Proxy URL to turn Claude off entirely.
+  await paint('claude-haiku-4-5', { proxyUrl: '', localUrl: 'https://host:3000/api/ollama' });
+  assert.equal(config.API.MODEL, 'ministral-local', 'first available model');
+});
+
+test('with nothing configured the full registry is still offered', async () => {
+  const { anthropicAPI, paint } = setup();
+  await paint('claude-haiku-4-5', { proxyUrl: '', localUrl: '' });
+  assert.equal(anthropicAPI.availableModels().length, 5,
+    'fail-safe: an empty picker would leave a fresh install with no way forward');
 });
 
 test('a repaint with an unchanged property does not revert an in-panel pick', async () => {

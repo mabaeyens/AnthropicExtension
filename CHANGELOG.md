@@ -10,6 +10,43 @@ All notable changes to this extension are documented here.
 > review what leaves your environment before use. Selecting a **local model** (Ministral via
 > Ollama) keeps inference on-machine.
 
+## [0.5.3] - 2026-07-27
+
+### Added
+
+- **Resizable panel.** A grip in the panel's **top-left** corner resizes it (minimum
+  380×260, bounded by the viewport). Top-left rather than the usual bottom-right because
+  the panel is anchored to the bottom-right of the viewport, so that is the only corner
+  whose outward drag can enlarge it. Resizing pins the panel to viewport coordinates the
+  same way dragging does, and the chosen size lasts for the session.
+- **A blank URL property now disables that backend.** Leaving **Proxy URL** empty makes
+  the Claude models unavailable: they are withheld from the properties dropdown *and*
+  from the chat panel's "Pick model" menu, so an Anthropic-free (local-only) deployment
+  never offers a model it cannot reach. Leaving **Local model URL** empty does the same
+  for the Ministral models. The object's settings explain which backend is off and why —
+  the chat panel stays free of configuration notices. If *neither* URL is set the full
+  registry is still offered, so a fresh install is never left with an empty picker.
+
+### Fixed
+
+- **The selected model survives sheet navigation.** Moving to a sheet where the extension
+  object is not placed left the body-global widget standing while a fresh AMD module set
+  was instantiated — `config.API.MODEL` reverted to the shipped default (Haiku) and the
+  picker redrew from it, silently changing the model under the user. `paint()` cannot fix
+  this because it never runs on those sheets, so the effective choice is now mirrored into
+  `sessionStorage` (`config.saveModelState` / `restoreModelState`) and restored at module
+  load, before the first render. Precedence is unchanged and now actually holds: a new
+  browser session starts from the object's **Default model** property, an in-panel pick
+  overrides it and sticks across sheets, and editing the property overrides a pick.
+- **A model whose transport disappears is no longer left active.** Blanking a URL while
+  the matching model was selected now falls back to the first available model instead of
+  keeping a selection that could only fail at request time.
+
+### Changed
+
+- The URL properties are **authoritative, including when blank** — a blank field no longer
+  falls back to the `config.js` default. An untouched object still gets the defaults.
+
 ## [0.5.2] - 2026-07-27
 
 ### Fixed
