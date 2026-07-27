@@ -47,36 +47,62 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 
 ## Description
 
-Adds a floating AI assistant panel to any Qlik Sense dashboard. The user selects one or more
-visualizations, asks questions in natural language, and receives model-generated analysis rendered as
-a **Markdown chat thread** with memory across the conversation. Answers **stream in token by token**
-as they are generated. The assistant can also **suggest a Qlik chart** from its answer and **create
-it** — preview it in the panel and add it to the current sheet (in Edit mode). A generating answer
-can be halted at any time with the **Stop** button, which keeps the text produced so far. On the
-first request, the extension sends the app's **data-model structure** (real table and field names,
-plus master dimension/measure definitions) so the model can interpret the chart in context.
+The extension puts a floating AI panel on any Qlik Sense sheet. You pick one or more charts, ask a
+question in plain language, and the answer comes back as a chat thread that remembers what was said
+before. Answers stream in while they are being written, so you can start reading straight away, and
+the Stop button cuts a long answer short while keeping whatever text already arrived.
 
-**Models are chosen in the chat panel**, not buried in the properties: a **Pick model** button next
-to *Submit* and *Suggest a chart* switches between Claude (Haiku 4.5 / Sonnet 4.6 / Opus 4.8) and the
-local Ministral models at any time. Switching clears the thread (history can't meaningfully cross
-models), and the model that produced each answer is named in its footer.
+It can also propose a chart. When an answer suggests a visualisation, "Suggest a chart" turns it into
+a real Qlik chart definition, previews it inside the panel, and adds it to the sheet if you are in
+Edit mode.
 
-**Where the data goes:** the selected chart's data — as of v0.3.0 the **full** hypercube, not just an
-initial page — together with the data-model structure is sent **through the proxy** to an external
-LLM. The extension POSTs to your configured **Proxy URL** (default
-`https://localhost:3000/api/anthropic`), forwarding your **Qlik session** so the proxy can
-authenticate you; the proxy injects the API key server-side and calls Anthropic. If the selected data
-exceeds ~65 KB the panel **warns before sending**, and a payload above the proxy's body limit
-(~1 MB) is stopped client-side with a friendly message.
+On the first question of a session it sends the app data model as well: the real table and field
+names, plus master dimension and measure definitions. That context is what lets the model discuss
+your data in your own terms instead of guessing what "Column 3" is supposed to mean.
 
-This extension targets **client-managed Qlik Sense on Windows** (Desktop and Enterprise). **Qlik Cloud
-is intentionally out of scope** — Qlik Cloud already ships native AI assistants, so there is no plan to
-support it here.
+You choose the model in the panel, not buried in the properties. "Pick model" switches between the
+Claude models (Haiku 4.5, Sonnet 4.6, Opus 4.8) and the local Ministral models whenever you like.
+Switching starts a fresh thread, because a conversation does not carry across models, and every
+answer says which model wrote it.
 
-> ℹ️ The proxy lives in this repo under [`./proxy`](./proxy) (imported with history from the former
-> standalone [`mabaeyens/cm-llm-proxy`](https://github.com/mabaeyens/cm-llm-proxy) repo). It holds the
-> API key server-side, authenticates the Qlik session, and enforces concurrency/rate limits — see
+### Where your data goes
+
+Asking a question sends the selected chart data (the full hypercube, not just the first page) and the
+data model structure to the proxy, which forwards it to the LLM. Your Qlik session goes with the
+request so the proxy can check who you are, and the API key stays on the proxy, never in the browser.
+Above roughly 65 KB the panel asks you to confirm first, and anything above the proxy body limit
+(1 MB) is stopped in the browser with a clear message rather than failing server side.
+
+If you pick one of the local Ministral models, inference runs on your own machine through Ollama and
+no chart data leaves your environment at all.
+
+This targets client-managed Qlik Sense on Windows, Desktop and Enterprise. Qlik Cloud is out of scope
+on purpose, since it already ships its own AI assistants.
+
+> The proxy lives in this repo under [`./proxy`](./proxy), imported with history from the former
+> standalone [`mabaeyens/cm-llm-proxy`](https://github.com/mabaeyens/cm-llm-proxy) repo. It holds the
+> API key server side, authenticates the Qlik session, and enforces concurrency and rate limits. See
 > [`proxy/README.md`](./proxy/README.md).
+
+## Use cases
+
+What this is actually good for, based on using it in demos and on real apps:
+
+- **Explaining a chart to someone who did not build it.** Select the chart, ask "what is going on
+  here", and get a written read of the numbers instead of a meeting.
+- **A quick sanity pass before you present.** Ask what stands out, what looks off, or which segment
+  is driving a total, and you walk in knowing the story in the data.
+- **Turning a question into a chart.** Describe what you want to see, let it propose the chart, then
+  preview it and drop it on the sheet if it is right.
+- **Getting oriented in an unfamiliar app.** Because the data model goes with the first question, you
+  can ask what a field means or which table something comes from.
+- **Demos where data cannot leave the building.** Switch to a local Ministral model and the whole
+  conversation stays on the machine, which makes the "but where does our data go" conversation short.
+- **Showing customers what an on-prem AI assistant could look like** without waiting for a product
+  roadmap, and without handing anyone an API key.
+
+Keep in mind it is a demo asset. It is good at reading a chart and drafting an explanation. It is not
+a governed, supported analytics feature, and it should not be pointed at sensitive data.
 
 ## Requirements
 

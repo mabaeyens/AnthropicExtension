@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Practical checks for the Anthropic AI Assistant extension, written so you can paste them
-straight into a browser console — or hand this file to an AI assistant and let it run them
+straight into a browser console, or hand this file to an AI assistant and let it run them
 and read the output back to you.
 
 **How to open the console:** on the Qlik sheet, press `F12` → **Console** tab. Paste a
@@ -22,8 +22,8 @@ while diagnosing, or the extension's own DEBUG output will bury the answers.
 **Almost always: a second AI Assistant object exists somewhere in the app.**
 
 All objects of this extension in an app share one configuration in the browser, but the
-**properties are per object**. A second object — even one on a sheet you never look at,
-even one whose settings you never touched — paints its own defaults over the shared
+**properties are per object**. A second object, even one on a sheet you never look at, even one
+whose settings you never touched, paints its own defaults over the shared
 configuration when its sheet is rendered. Its untouched **Default model** (Haiku) and blank
 URLs then replace yours. As of **v0.5.4** the configured object wins regardless, and the
 extra object is ignored with a console warning, but it is still worth finding and deleting.
@@ -44,7 +44,7 @@ require(['qlik'], function (q) {
             if (!/anthropic/i.test(viz)) return;
             found++;
             console.log('AI Assistant already installed on sheet "' + s.qMeta.title +
-              '" — object ' + cell.name + ' — settings: ' +
+              '", object ' + cell.name + ', settings: ' +
               JSON.stringify(o.properties.props || {}));
           });
         });
@@ -59,7 +59,7 @@ require(['qlik'], function (q) {
 ```
 
 **Reading the output:** one line per object, naming the sheet and the object ID. An object
-whose settings print as `{"model":"claude-haiku-4-5"}` — no `proxyUrl`, no `localUrl` — is
+whose settings print as `{"model":"claude-haiku-4-5"}`, with no `proxyUrl` and no `localUrl`, is
 an unconfigured stray. Delete it, or configure it identically to the real one.
 
 **To delete it:** open the named sheet, enter **Edit sheet**, select the AI Assistant
@@ -83,24 +83,24 @@ require(['extensions/AnthropicExtension/js/config',
 
 | Field | Meaning |
 |---|---|
-| `instance` | Identifies the loaded module set. **Same value on both sheets** ⇒ the modules were not reloaded, so anything that changed was changed by code — normally another object's `paint()` |
+| `instance` | Identifies the loaded module set. **Same value on both sheets** ⇒ the modules were not reloaded, so anything that changed was changed by code, normally another object's `paint()` |
 | `def` | The **Default model** property of whichever object owns the configuration |
 | `pick` | The in-panel **Pick model** choice; `null` means "follow the property" |
-| `resolved` | The model actually in effect — `pick` or `def`, substituted if that model's backend is switched off |
+| `resolved` | The model actually in effect: `pick` or `def`, substituted if that model's backend is switched off |
 | `proxy` / `local` | The two endpoints in effect. Blank means that backend is **switched off**, and its models are hidden from the picker |
 
-If `def` changes between sheets, a second object overwrote it — run the enumeration above.
+If `def` changes between sheets, a second object overwrote it. Run the enumeration above.
 
 ---
 
-## 2. "Configuration problem — No endpoint configured"
+## 2. "Configuration problem, No endpoint configured"
 
 The banner means both **Proxy URL** and **Local model URL** are blank in the configuration
 currently in effect. Since v0.5.4 it re-evaluates on every paint and clears itself as soon
 as one is valid; if it persists:
 
 - Check the object's settings actually contain the URL (*Edit object → Settings*).
-- Run the config probe (§1) — if `proxy` and `local` are both `""`, another object owns the
+- Run the config probe (§1). If `proxy` and `local` are both `""`, another object owns the
   configuration. Enumerate objects as above.
 - On **v0.5.3 and earlier** the banner was validated once at startup and could never clear.
   Upgrade.
@@ -132,7 +132,7 @@ warning (Firefox: **Advanced… → Accept the Risk and Continue**). Exceptions 
 
 **Wrong host for the session cookie.** The proxy authenticates you with the Qlik session
 cookie, which the browser only sends to the **Qlik host name**. Use
-`https://<qlik-host>:3000/api/...` — not `localhost` — or every call returns 401. Ports are
+`https://<qlik-host>:3000/api/...`, not `localhost`, or every call returns 401. Ports are
 irrelevant to cookie scope, so the same host on port 3000 is fine.
 
 **The origin isn't allowlisted.** The proxy's `QLIK_ORIGINS` must contain the exact origin
@@ -165,7 +165,7 @@ By design: a model whose backend has no URL is withheld.
   "not configured".
 
 The object's **Settings** panel states which backend is off. The chat panel deliberately
-says nothing — it only lists what works.
+says nothing, it only lists what works.
 
 ---
 
@@ -174,7 +174,7 @@ says nothing — it only lists what works.
 - First call after a cold start loads the model into memory (~20 s), then generates at a
   few tokens/second on a small GPU. The client timeout for local calls is 5 minutes.
 - Check the model tag exists: `ollama list` must show `ministral-3b-demo` or
-  `ministral-3-demo` (the derived tags with `num_ctx 8192` — see README).
+  `ministral-3-demo` (the derived tags with `num_ctx 8192`, see README).
 - Use **Stop** to abort; it really halts inference (the proxy propagates the disconnect).
 - Ministral 3 3B is roughly half the memory of the 8B at similar speed.
 
@@ -183,7 +183,7 @@ says nothing — it only lists what works.
 ## 7. Am I even running the build I think I am?
 
 The panel footer shows `vX.Y.Z · build N`. Qlik and the browser both cache extension files
-aggressively — after re-importing in the QMC, hard-reload the sheet (`Ctrl`+`Shift`+`R`).
+aggressively. After re-importing in the QMC, hard-reload the sheet (`Ctrl`+`Shift`+`R`).
 If the footer still shows the old build, clear the cache or use a private window.
 
 The console probe in §1 prints `build` too, which is the reliable check when you are unsure
