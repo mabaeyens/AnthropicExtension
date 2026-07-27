@@ -36,7 +36,8 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > inference on your own machine via Ollama, so **no chart data leaves your environment**. See
 > [Local models](#local-models-ministral-3-via-ollama).
 >
-> See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), and [`diagrams.md`](./diagrams.md).
+> See [`CHANGELOG.md`](./CHANGELOG.md), [`INSTALL.md`](./INSTALL.md), [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md),
+> and [`diagrams.md`](./diagrams.md).
 > The production-hardening architecture (implemented across the proxy and extension in v0.5.0):
 > [`docs/security-model.md`](./docs/security-model.md) and
 > [`docs/concurrency-model.md`](./docs/concurrency-model.md).

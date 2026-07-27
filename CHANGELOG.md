@@ -12,6 +12,14 @@ All notable changes to this extension are documented here.
 
 ## [0.5.4] - 2026-07-27
 
+### Added
+
+- **[`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md)** — console snippets and checks written to be
+  run by a future reader (or handed to an AI assistant to run). Covers the duplicate-object
+  case with an enumerator that reports *"AI Assistant already installed on sheet … — object
+  … — settings: …"*, a probe for the configuration actually in effect, and the NetworkError /
+  proxy-status / missing-model / slow-local-model paths.
+
 ### Fixed
 
 - **A second extension object no longer hijacks the configuration.** `config` is one module
