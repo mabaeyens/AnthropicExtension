@@ -16,7 +16,9 @@
     "express": "^4.19.0"
   },
   "devDependencies": {
-    "eslint": "^8.57.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0"
   },
   "engines": {
     "node": ">=18.0.0"

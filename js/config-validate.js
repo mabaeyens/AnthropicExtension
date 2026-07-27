@@ -10,7 +10,8 @@ define(['./config'], function (config) {
   function isPosInt(v) { return typeof v === 'number' && isFinite(v) && v > 0 && Math.floor(v) === v; }
   function isValidUrl(v) {
     if (!isNonEmptyString(v)) return false;
-    try { /* eslint-disable-next-line no-new */ new URL(v); return true; } catch (e) { return false; }
+    // `no-new` is not in the recommended set, so the disable it used to carry is redundant.
+    try { new URL(v); return true; } catch (e) { return false; }
   }
 
   return {

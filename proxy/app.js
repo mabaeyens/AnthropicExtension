@@ -50,7 +50,9 @@ function createApp({
   app.use(express.json({ limit: bodyLimit }));
 
   // Body-parser error handler (P04 §4.6): size/parse failures → 413/400, generic body.
-  // eslint-disable-next-line no-unused-vars
+  // The unused `next` is required: express only treats a 4-arity function as an error
+  // handler. (The eslint-disable that used to sit here is redundant under the flat config,
+  // which sets args:'none'.)
   app.use((err, req, res, next) => {
     const rid = req.requestId || crypto.randomUUID();
     if (err.type === 'entity.too.large') {
