@@ -1,3 +1,18 @@
+# Normalize every text file to LF inside the repository, whatever the platform
+# it was committed from. Working-tree endings stay per-platform unless a rule
+# below overrides them.
+* text=auto
+
+# Force LF in the working tree too, not just in the repository. npm derives
+# package-lock.json's line endings from package.json, so a CRLF checkout makes
+# any npm write rewrite the whole lockfile instead of the lines that changed.
+*.json text eol=lf
+*.qext text eol=lf
+
+# Shell scripts break with CRLF; PowerShell is conventionally CRLF on Windows.
+*.sh  text eol=lf
+*.ps1 text eol=crlf
+
 # Treat generated documents as binary (no line-ending conversion)
 *.pdf  binary
 *.docx binary
