@@ -120,10 +120,21 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
   -keyout certs/localhost3000-key.pem \
   -out certs/localhost3000-cert.pem \
   -subj "/CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+  -addext "extendedKeyUsage=serverAuth"
 ```
 
 > The `subjectAltName` is required — browsers reject certificates that only carry a CN.
+> The three `basicConstraints`/`keyUsage`/`extendedKeyUsage` extensions are **required
+> too, not cosmetic**: without an explicit `basicConstraints=CA:FALSE`, some OpenSSL
+> versions default a self-signed `-x509` cert to `CA:TRUE`. Chrome/Windows CryptoAPI
+> tolerate that, but Firefox's strict validator (`mozilla::pkix`) flatly refuses to use a
+> CA-flagged certificate as a TLS end-entity/leaf, failing closed with
+> `MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY` and no way to click through it. Verify
+> with `openssl x509 -in certs/localhost3000-cert.pem -noout -text | grep -A2 "Basic Constraints"`
+> — it must read `CA:FALSE`.
 
 The certificate must then be trusted, or the browser will silently block the extension's
 request (an XHR failure with no status, not a warning you can click through). On Windows,
@@ -136,6 +147,15 @@ certutil -user -addstore Root certs\localhost3000-cert.pem
 Restart the browser afterwards — close every window, not just the tab; the cert/HSTS state
 is cached at the process level. To remove it later, use
 `certutil -user -delstore Root <thumbprint>`.
+
+> **Firefox does not read the Windows certificate store by default** — it keeps its own
+> (NSS-based) trust store, so importing into `Cert:\CurrentUser\Root` above has no effect
+> on it. Either import the cert directly into Firefox (**Settings → Privacy & Security →
+> Certificates → View Certificates → Authorities → Import**, then check "Trust this CA to
+> identify websites"), or, better for a cert that will get rotated later, flip
+> `security.enterprise_roots.enabled` to `true` in `about:config` and restart Firefox —
+> that makes it read the Windows store the same way Chrome/Edge already do, so a future
+> rotation needs no separate Firefox step.
 
 > **If the proxy shares a hostname with the Qlik hub** (e.g. both are reached as
 > `spmad-mby1`, just on different ports), an untrusted proxy cert shows up as an **HSTS**
@@ -271,6 +291,8 @@ variable is missing or a cert path is unreadable.
 | `503` with `Retry-After` | The concurrency queue is full or the request timed out waiting; also returned by `/ready` during graceful drain |
 | Browser shows a status-less XHR failure | The proxy's TLS certificate isn't trusted — see Certificates |
 | Browser refuses to load with an **HSTS** error and no click-through option | The proxy shares a hostname with something that already sent `Strict-Transport-Security` (typically the Qlik hub itself, on 443) — trust the cert (see Certificates); there's no bypass |
+| **Firefox only**: `MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY` | The cert's `basicConstraints` is `CA:TRUE` — regenerate it with the `basicConstraints=critical,CA:FALSE` extension (see Certificates); Chrome/Windows tolerate a CA-flagged leaf cert, Firefox's strict validator does not |
+| **Firefox only**: cert trusted in Windows but Firefox still rejects it | Firefox has its own certificate store, separate from Windows — import the cert into Firefox directly, or enable `security.enterprise_roots.enabled` in `about:config` (see Certificates) |
 | CORS rejection | `QLIK_ORIGINS` is compared **exactly**; `https://localhost` will not match a hub served from `https://myserver` |
 | Model keeps generating after the client stops | You're on a pre-2.0.0 proxy — cancel propagation was added in v2.0.0 |
 
