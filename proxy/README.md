@@ -55,11 +55,7 @@ Qlik Sense (browser) → https://localhost:3000/api/ollama    → http://localho
 
 ### Automated (Windows / PowerShell) — recommended
 
-`scripts/setup.ps1` does the mechanical steps for you (idempotent): checks Node, runs
-`npm ci`, optionally generates a dedicated local dev CA + a proper leaf cert signed by it
-(and trusts the CA), scaffolds `.env` from the template with the values you pass, and
-optionally registers the Windows service. You still supply the site secrets (API key,
-Qlik auth) — the script never invents them.
+`scripts/setup.ps1` does the mechanical steps for you (idempotent): checks Node, runs `npm ci`, optionally generates a dedicated local dev CA + a proper leaf cert signed by it (and trusts the CA), scaffolds `.env` from the template with the values you pass, and optionally registers the Windows service. You still supply the site secrets (API key, Qlik auth) — the script never invents them.
 
 ```powershell
 # Local dev: deps + a CA-signed dev cert (SAN: localhost, 127.0.0.1, and your real
@@ -75,19 +71,9 @@ pwsh scripts/setup.ps1 -ApiKey 'sk-ant-...' -QlikSessionUrl '...' `
   -QlikCert '...' -QlikKey '...' -Origins 'https://your-qlik' -LogLevel INFO -InstallService
 ```
 
-`-CertHosts` is a **comma-separated string** (`'host1,host2'`), not a PowerShell array —
-array-typed parameters don't reliably survive a `pwsh -File` invocation from outside
-PowerShell, so this avoids that trap entirely. Run `Get-Help scripts/setup.ps1 -Full` for
-every parameter.
+`-CertHosts` is a **comma-separated string** (`'host1,host2'`), not a PowerShell array — array-typed parameters don't reliably survive a `pwsh -File` invocation from outside PowerShell, so this avoids that trap entirely. Run `Get-Help scripts/setup.ps1 -Full` for every parameter.
 
-> **If the service is already installed, re-running this script (or any bare `npm ci`)
-> will break it.** `npm ci --omit=dev` deletes anything not in `package-lock.json` —
-> which includes `node-windows`, deliberately kept out of the lockfile so it never lands
-> on a production node's dependency tree. The service then fails to start (Windows
-> **Error 1067**, "the process terminated unexpectedly"; the wrapper log under
-> `daemon/*.err.log` shows `Cannot find module '...\node-windows\lib\wrapper.js'`). Fix:
-> `npm install --no-save node-windows`, then `Restart-Service <name>` — no need to
-> re-register the service, just restore the missing package.
+> **If the service is already installed, re-running this script (or any bare `npm ci`) will break it.** `npm ci --omit=dev` deletes anything not in `package-lock.json` — which includes `node-windows`, deliberately kept out of the lockfile so it never lands on a production node's dependency tree. The service then fails to start (Windows **Error 1067**, "the process terminated unexpectedly"; the wrapper log under `daemon/*.err.log` shows `Cannot find module '...\node-windows\lib\wrapper.js'`). Fix: `npm install --no-save node-windows`, then `Restart-Service <name>` — no need to re-register the service, just restore the missing package.
 
 ### Manual
 
@@ -124,16 +110,9 @@ See `.env.example` for the full annotated list (credentials, auth, concurrency, 
 
 ## Certificates
 
-Certificates are **not in the repo** — `certs/*.pem` is git-ignored, since a private key
-doesn't belong in version control and a `localhost` certificate is useless to anyone else.
-The server won't start until you generate your own.
+Certificates are **not in the repo** — `certs/*.pem` is git-ignored, since a private key doesn't belong in version control and a `localhost` certificate is useless to anyone else. The server won't start until you generate your own.
 
-**On Windows, `scripts/setup.ps1 -DevCert -TrustCert` (see Setup above) is the
-recommended way to do this** — it generates a dedicated local CA plus a leaf cert signed
-by it, and trusts only the CA, so rotating the leaf or adding a hostname later never
-needs re-trusting. The manual single-command version below produces one self-signed
-leaf trusted directly instead — simpler for a quick one-off, but every rotation needs a
-fresh `certutil` import:
+**On Windows, `scripts/setup.ps1 -DevCert -TrustCert` (see Setup above) is the recommended way to do this** — it generates a dedicated local CA plus a leaf cert signed by it, and trusts only the CA, so rotating the leaf or adding a hostname later never needs re-trusting. The manual single-command version below produces one self-signed leaf trusted directly instead — simpler for a quick one-off, but every rotation needs a fresh `certutil` import:
 
 ```bash
 mkdir -p certs
@@ -147,46 +126,19 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
   -addext "extendedKeyUsage=serverAuth"
 ```
 
-> The `subjectAltName` is required — browsers reject certificates that only carry a CN.
-> The three `basicConstraints`/`keyUsage`/`extendedKeyUsage` extensions are **required
-> too, not cosmetic**: without an explicit `basicConstraints=CA:FALSE`, some OpenSSL
-> versions default a self-signed `-x509` cert to `CA:TRUE`. Chrome/Windows CryptoAPI
-> tolerate that, but Firefox's strict validator (`mozilla::pkix`) flatly refuses to use a
-> CA-flagged certificate as a TLS end-entity/leaf, failing closed with
-> `MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY` and no way to click through it. Verify
-> with `openssl x509 -in certs/localhost3000-cert.pem -noout -text | grep -A2 "Basic Constraints"`
-> — it must read `CA:FALSE`.
+> The `subjectAltName` is required — browsers reject certificates that only carry a CN. The three `basicConstraints`/`keyUsage`/`extendedKeyUsage` extensions are **required too, not cosmetic**: without an explicit `basicConstraints=CA:FALSE`, some OpenSSL versions default a self-signed `-x509` cert to `CA:TRUE`. Chrome/Windows CryptoAPI tolerate that, but Firefox's strict validator (`mozilla::pkix`) flatly refuses to use a CA-flagged certificate as a TLS end-entity/leaf, failing closed with `MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY` and no way to click through it. Verify with `openssl x509 -in certs/localhost3000-cert.pem -noout -text | grep -A2 "Basic Constraints"` — it must read `CA:FALSE`.
 
-The certificate must then be trusted, or the browser will silently block the extension's
-request (an XHR failure with no status, not a warning you can click through). On Windows,
-Chrome and Edge read the OS store:
+The certificate must then be trusted, or the browser will silently block the extension's request (an XHR failure with no status, not a warning you can click through). On Windows, Chrome and Edge read the OS store:
 
 ```powershell
 certutil -user -addstore Root certs\localhost3000-cert.pem
 ```
 
-Restart the browser afterwards — close every window, not just the tab; the cert/HSTS state
-is cached at the process level. To remove it later, use
-`certutil -user -delstore Root <thumbprint>`.
+Restart the browser afterwards — close every window, not just the tab; the cert/HSTS state is cached at the process level. To remove it later, use `certutil -user -delstore Root <thumbprint>`.
 
-> **Firefox does not read the Windows certificate store by default** — it keeps its own
-> (NSS-based) trust store, so importing into `Cert:\CurrentUser\Root` above has no effect
-> on it. Either import the cert directly into Firefox (**Settings → Privacy & Security →
-> Certificates → View Certificates → Authorities → Import**, then check "Trust this CA to
-> identify websites"), or, better for a cert that will get rotated later, flip
-> `security.enterprise_roots.enabled` to `true` in `about:config` and restart Firefox —
-> that makes it read the Windows store the same way Chrome/Edge already do, so a future
-> rotation needs no separate Firefox step.
+> **Firefox does not read the Windows certificate store by default** — it keeps its own (NSS-based) trust store, so importing into `Cert:\CurrentUser\Root` above has no effect on it. Either import the cert directly into Firefox (**Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import**, then check "Trust this CA to identify websites"), or, better for a cert that will get rotated later, flip `security.enterprise_roots.enabled` to `true` in `about:config` and restart Firefox — that makes it read the Windows store the same way Chrome/Edge already do, so a future rotation needs no separate Firefox step.
 
-> **If the proxy shares a hostname with the Qlik hub** (e.g. both are reached as
-> `spmad-mby1`, just on different ports), an untrusted proxy cert shows up as an **HSTS**
-> error instead of the usual "Your connection isn't private → Proceed anyway": *"You
-> cannot visit `<host>` right now because the website uses HSTS."*, with no click-through
-> link at all. This happens because the Qlik hub (port 443) already sent a
-> `Strict-Transport-Security` header for that bare hostname, and the browser then refuses
-> *any* untrusted cert on *any* port of that same host, HSTS-pinned host regardless of
-> which service actually issued the header. The fix is the same — trust the cert above —
-> but there's no way to bypass it temporarily to check; it's trust-it-or-nothing.
+> **If the proxy shares a hostname with the Qlik hub** (e.g. both are reached as `spmad-mby1`, just on different ports), an untrusted proxy cert shows up as an **HSTS** error instead of the usual "Your connection isn't private → Proceed anyway": *"You cannot visit `<host>` right now because the website uses HSTS."*, with no click-through link at all. This happens because the Qlik hub (port 443) already sent a `Strict-Transport-Security` header for that bare hostname, and the browser then refuses *any* untrusted cert on *any* port of that same host, regardless of which service actually issued the header. The fix is the same — trust the cert above — but there's no way to bypass it temporarily to check; it's trust-it-or-nothing.
 
 ### Production certificate (issuance & rotation)
 
@@ -195,35 +147,12 @@ Qlik node and must present a **CA-signed certificate for the proxy's own hostnam
 name the extension's Proxy URL points at), issued by your internal/enterprise CA so the
 Qlik page trusts it without a manual store import:
 
-- Issue the cert against the FQDN clients use; set `TLS_CERT` / `TLS_KEY` to its paths
-  (keep them off the repo — `certs/*.pem` stays git-ignored). `TLS_MIN_VERSION` defaults
-  to `TLSv1.2`; set `TLSv1.3` where the client fleet supports it.
-- **Reusing Qlik's own internal CA (the one behind `QLIK_CERT`/`root.pem`), instead of
-  the self-signed pair above, is worth doing if that CA is already trusted on the
-  machines that will open the extension** — check first: `Get-ChildItem
-  Cert:\LocalMachine\Root | Where-Object Subject -like '*<your CA CN>*'` on a client
-  machine, or ask whoever manages the Qlik deployment whether it's pushed via GPO/SCCM.
-  If it is, a leaf cert chained to it is trusted automatically, no manual `certutil`
-  import anywhere.
-  - **Never reuse `client.pem` (the QlikClient cert) itself as the proxy's TLS
-    certificate.** It's a *client*-authentication credential the proxy presents *to*
-    QPS, with `CN=QlikClient` — it doesn't carry the proxy's own hostname, so browsers
-    will reject it on a Subject/SAN mismatch even if the chain is trusted, and reusing
-    one credential for two different trust purposes is bad practice regardless.
-  - Instead, request a **new leaf certificate from that same CA**, with `Server
-    Authentication` EKU and the proxy's actual hostname(s) as SANs. On QSEoW, Qlik
-    itself is usually the one holding that CA's signing key (as part of its own internal
-    PKI) — check with your Qlik admin how new server certs get issued from it (e.g. via
-    QMC's certificate export, or however your org already mints QSEoW node-to-node
-    certs); this isn't something to do by hand with a discovered private key.
-  - **This doesn't require the proxy to run on an actual Qlik Sense node.** Any machine
-    can hold a leaf cert issued by that CA. What matters is (a) the cert's SAN matches
-    whatever hostname clients will actually use to reach the proxy, wherever it runs, and
-    (b) that CA is trusted on those clients' machines — which, unlike the self-signed
-    path, only needs solving once per CA rather than once per proxy hostname.
-- **Rotation:** re-issue before expiry, drop the new pair in place, and restart the
-  Windows service (P06) — clients reconnect automatically. Overlap validity windows so a
-  renewal never leaves a gap. Rotation is a config/file change, not a code change.
+- Issue the cert against the FQDN clients use; set `TLS_CERT` / `TLS_KEY` to its paths (keep them off the repo — `certs/*.pem` stays git-ignored). `TLS_MIN_VERSION` defaults to `TLSv1.2`; set `TLSv1.3` where the client fleet supports it.
+- **Reusing Qlik's own internal CA (the one behind `QLIK_CERT`/`root.pem`), instead of the self-signed pair above, is worth doing if that CA is already trusted on the machines that will open the extension** — check first: `Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*<your CA CN>*'` on a client machine, or ask whoever manages the Qlik deployment whether it's pushed via GPO/SCCM. If it is, a leaf cert chained to it is trusted automatically, no manual `certutil` import anywhere.
+  - **Never reuse `client.pem` (the QlikClient cert) itself as the proxy's TLS certificate.** It's a *client*-authentication credential the proxy presents *to* QPS, with `CN=QlikClient` — it doesn't carry the proxy's own hostname, so browsers will reject it on a Subject/SAN mismatch even if the chain is trusted, and reusing one credential for two different trust purposes is bad practice regardless.
+  - Instead, request a **new leaf certificate from that same CA**, with `Server Authentication` EKU and the proxy's actual hostname(s) as SANs. On QSEoW, Qlik itself is usually the one holding that CA's signing key (as part of its own internal PKI) — check with your Qlik admin how new server certs get issued from it (e.g. via QMC's certificate export, or however your org already mints QSEoW node-to-node certs); this isn't something to do by hand with a discovered private key.
+  - **This doesn't require the proxy to run on an actual Qlik Sense node.** Any machine can hold a leaf cert issued by that CA. What matters is (a) the cert's SAN matches whatever hostname clients will actually use to reach the proxy, wherever it runs, and (b) that CA is trusted on those clients' machines — which, unlike the self-signed path, only needs solving once per CA rather than once per proxy hostname.
+- **Rotation:** re-issue before expiry, drop the new pair in place, and restart the Windows service (P06) — clients reconnect automatically. Overlap validity windows so a renewal never leaves a gap. Rotation is a config/file change, not a code change.
 
 ## Usage
 
@@ -289,21 +218,12 @@ node service/install-service.js     # run as Administrator; registers + starts "
 node service/uninstall-service.js   # remove the service (standalone `node server.js` still works)
 ```
 
-Set `$env:SERVICE_NAME` before either command to register/remove it under a
-site-specific name instead of the default `cm-llm-proxy` — both scripts read the same
-variable, so use the same value for install and uninstall.
+Set `$env:SERVICE_NAME` before either command to register/remove it under a site-specific name instead of the default `cm-llm-proxy` — both scripts read the same variable, so use the same value for install and uninstall.
 
 Run the service under a **least-privilege account** that can read the TLS and Qlik certificates.
-`Stop-Service <name>` triggers the graceful drain (in-flight requests finish within
-`DRAIN_TIMEOUT_MS`); `Start-Service` comes back ready once boot validation passes.
+`Stop-Service <name>` triggers the graceful drain (in-flight requests finish within `DRAIN_TIMEOUT_MS`); `Start-Service` comes back ready once boot validation passes.
 
-> **`npm install --no-save node-windows` is not durable.** It's deliberately kept out of
-> `package-lock.json` so it never lands on a production node's runtime dependency tree —
-> but that also means a later `npm ci` (a redeploy, re-running `setup.ps1`, anything that
-> reinstalls from the lockfile) **deletes it**, and the running service then fails with
-> Windows **Error 1067** on its next restart. If that happens: `npm install --no-save
-> node-windows` again, then `Restart-Service <name>` — the service registration itself is
-> untouched, only the wrapper's dependency needs restoring.
+> **`npm install --no-save node-windows` is not durable.** It's deliberately kept out of `package-lock.json` so it never lands on a production node's runtime dependency tree — but that also means a later `npm ci` (a redeploy, re-running `setup.ps1`, anything that reinstalls from the lockfile) **deletes it**, and the running service then fails with Windows **Error 1067** on its next restart. If that happens: `npm install --no-save node-windows` again, then `Restart-Service <name>` — the service registration itself is untouched, only the wrapper's dependency needs restoring.
 
 **Logs.** With `LOG_DIR` set, the app log (`app.log`) and a separate audit log (`audit.log`) are
 written there as JSON lines with size-based rotation (`LOG_MAX_BYTES` × `LOG_MAX_FILES`); otherwise
