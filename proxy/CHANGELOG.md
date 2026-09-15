@@ -4,6 +4,56 @@ All notable changes to the proxy are documented here. The proxy is versioned and
 **independently** of the extension: its tags are `proxy-vX.Y.Z` (the extension uses `vX.Y.Z`).
 The two live in one monorepo but ship on their own cadence.
 
+## [2.0.2] - 2026-09-15
+
+### Fixed — TLS dev certificate now correctly constrained (security-relevant)
+
+`scripts/setup.ps1 -DevCert` (and the manual `openssl` command in the README) previously
+generated a **self-signed leaf certificate with `basicConstraints: CA:TRUE`** and no
+`keyUsage`/`extendedKeyUsage` restriction — i.e. the certificate the proxy presents for
+TLS was, by its own X.509 extensions, itself a valid Certification Authority, capable in
+principle of signing further certificates, rather than a constrained end-entity
+certificate scoped to serving TLS for one hostname. Windows CryptoAPI and Chrome accept
+such a certificate for TLS without complaint; Firefox's strict path-building validator
+(`mozilla::pkix`) correctly refuses it (`MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY`),
+which is how this was caught.
+
+**Fix:** certificate generation is now a proper two-tier setup —
+1. A **dedicated local development CA** (`certs/ca/`, `CN=AnthropicExtension Proxy Dev
+   CA`, `basicConstraints=critical,CA:TRUE,pathlen:0`, `keyUsage=critical,keyCertSign,
+   cRLSign`, generated once per checkout) — separate from, and with no relationship to,
+   any CA used elsewhere in the customer's Qlik or corporate PKI.
+2. A **constrained end-entity leaf certificate** (`certs/localhost3000-cert.pem`) signed
+   by that CA, with `basicConstraints=critical,CA:FALSE`,
+   `keyUsage=critical,digitalSignature,keyEncipherment`, and
+   `extendedKeyUsage=serverAuth` — i.e. usable only to serve TLS for the proxy's
+   configured hostnames (`-CertHosts`), not to sign anything else.
+
+`-TrustCert` now imports only the CA into the OS trust store, never the leaf, so
+certificate rotation or adding a hostname later never requires re-importing anything.
+Both the CA's and the leaf's private keys are generated locally, never leave the host,
+and are git-ignored (`certs/ca/` was added to `.gitignore`); the CA key is treated as
+more sensitive than the leaf's, since it alone can mint further certificates.
+
+**Action for existing deployments:** regenerate the certificate. The previous
+`CA:TRUE` self-signed cert should be considered non-conformant to expected TLS
+end-entity constraints and replaced; it was never distributed outside the local `certs/`
+directory (git-ignored) so this is a local remediation, not a supply-chain concern.
+
+### Fixed
+
+- `setup.ps1 -CertHosts` is now a comma-separated **string**, not a PowerShell array —
+  an array-typed parameter does not reliably survive a `pwsh -File` invocation from
+  outside PowerShell (observed: silently collapsed into one malformed SAN value).
+
+### Documented
+
+- `npm ci` deletes `node-windows` (deliberately excluded from `package-lock.json` so it
+  never reaches a production node's dependency tree), which crashes an already-installed
+  Windows service with Error 1067 on its next restart. Documented in Setup, Operations,
+  and the Troubleshooting table; fix is `npm install --no-save node-windows` then
+  `Restart-Service <name>`.
+
 ## [2.0.1] - 2026-09-15
 
 ### Fixed
