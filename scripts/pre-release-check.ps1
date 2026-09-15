@@ -1,5 +1,5 @@
-# Pre-release guard (E07 §4.4/§4.5). Refuses to proceed unless the immutable-release
-# invariants hold. Run from anywhere:
+# Maintainer/dev tooling: pre-release guard (E07 §4.4/§4.5). Refuses to proceed unless
+# the immutable-release invariants hold. Run from anywhere:
 #     pwsh scripts/pre-release-check.ps1 vX.Y.Z
 #
 # Checks:

@@ -1,6 +1,6 @@
 {
   "name": "anthropic-extension-dev",
-  "version": "0.4.0",
+  "version": "0.5.5",
   "private": true,
   "description": "Dev-only tooling (ESLint + node:test unit tests) for the AnthropicExtension Qlik Sense extension. NOT shipped — the runtime is plain AMD loaded by Qlik's RequireJS (no build step). package.ps1 zips only the runtime files.",
   "scripts": {

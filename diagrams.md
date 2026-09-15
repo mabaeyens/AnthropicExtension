@@ -4,13 +4,13 @@ How a question travels **User → Qlik Sense → proxy → external LLM → back
 is created, for the Anthropic AI Assistant extension (v0.5.0). Diagrams use
 [Mermaid](https://mermaid.js.org/) and render automatically on GitHub.
 
-> ⚠️ **Demo only — no warranty, no liability.** Not a Qlik product or supported integration. **Neither
-> Qlik nor the author accept any liability** for use in any environment.
+> ⚠️ **Independent project, no warranty or liability.** Not a Qlik product or supported integration.
+> **Neither Qlik nor the author accept any liability** for use in any environment.
 >
 > **Data egress:** asking a question sends the **full** selected chart/table (complete hypercube), the
 > app's **table and field names**, and **master dimension/measure definitions** out of the on-prem
 > Qlik Sense environment **through the proxy** to an external LLM (`api.anthropic.com` by default). As
-> of v0.5.0 the extension is **proxy-only** — the browser holds no API key. The **chart-creation** step
+> of v0.5.0 the extension is **proxy-only**; the browser holds no API key. The **chart-creation** step
 > (§5) writes back to the live Qlik app locally as the logged-in user and does **not** involve the LLM.
 
 ---
@@ -20,7 +20,7 @@ is created, for the Anthropic AI Assistant extension (v0.5.0). Diagrams use
 The extension runs **in the browser** (the Qlik Sense client) and talks to the Qlik engine for chart
 data. For analysis, Qlik data **leaves the on-prem environment** through the **proxy**, which holds the
 API key and authenticates the caller, and crosses the trust boundary to an **external LLM**. The
-chart-*creation* step (§5) stays local — it writes back to the Qlik app.
+chart-*creation* step (§5) stays local: it writes back to the Qlik app.
 
 ```mermaid
 flowchart LR
@@ -82,17 +82,17 @@ sequenceDiagram
 
   Note over User,ANT: Ask a question (data leaves on-prem, via the proxy)
   User->>UI: Type question + Submit
-  UI->>UI: single-flight guard (ignore if busy); disable Submit/Suggest
+  UI->>UI: single-flight guard (ignore if busy), disable Submit/Suggest
   UI->>DC: getAppContextCached()
   Note right of DC: Collected once per session (promise-memoized), then cached
   DC->>QS: getTablesAndKeys + field/dimension/measure session object (first time only)
   QS-->>DC: real tables, fields, master items (with expressions)
   DC-->>UI: appContext
 
-  UI->>UI: guard payload (~65 KB warn; > proxy body limit blocked client-side)
+  UI->>UI: guard payload (~65 KB warn, over proxy body limit blocked client-side)
   UI->>API: sendToAnthropic / streamToAnthropic({ userPrompt, chartData, context, systemPrompt, history })
   API->>API: buildMessageContent() + buildTransport() (single proxy target)
-  API->>PX: POST [Proxy URL] with credentials (Qlik session cookie) — NO x-api-key
+  API->>PX: POST [Proxy URL] with credentials (Qlik session cookie), NO x-api-key
   PX->>PX: authenticate Qlik session · validate body + model allowlist · admission slot
   PX->>ANT: forward POST /v1/messages (server key injected)
   ANT-->>PX: completion (buffered JSON or SSE stream)
@@ -106,7 +106,7 @@ sequenceDiagram
 
 ## 3. Transport (proxy-only)
 
-`anthropic-api.js → buildTransport()` resolves the **single** proxy target per request — there is no
+`anthropic-api.js -> buildTransport()` resolves the **single** proxy target per request; there is no
 direct-browser mode. Hosted and local models differ only by route and body shape, never by credential;
 both forward the Qlik session (`credentials: 'include'`) and carry **no** API key.
 
@@ -151,10 +151,10 @@ flowchart LR
 
 ---
 
-## 5. Chart creation (local write-back — no LLM)
+## 5. Chart creation (local write-back, no LLM)
 
 "Suggest a chart" asks the model for a chart **spec** (the only LLM step). Building and placing the
-chart happens **entirely in the browser** against the in-session Qlik engine, as the logged-in user —
+chart happens **entirely in the browser** against the in-session Qlik engine, as the logged-in user,
 no data is sent externally in this step. Writing to a sheet requires **Edit mode**.
 
 ```mermaid

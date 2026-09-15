@@ -2,11 +2,11 @@
 
 > **Status: implemented in v0.5.0.** This was the design reference for the
 > production-hardening effort; the boundaries and controls below are now realised across
-> the proxy and extension — credential custody (key server-side, client key stripped),
+> the proxy and extension, credential custody (key server-side, client key stripped),
 > caller authentication (Qlik session), proxy-only transport, input validation, and
 > transport hardening. The pre-0.5.0 demo held the API key (obfuscated) in the browser and
 > the proxy authenticated no one; that path is removed. Live on-node verification of the
-> Qlik-session carrier is the remaining step before release — see [`../README.md`](../README.md).
+> Qlik-session carrier is the remaining step before release, see [`../README.md`](../README.md).
 
 This is the authoritative reference the security-bearing hardening work cites. It
 defines who the actors are, where the trust boundaries sit, what crosses them, and
@@ -18,7 +18,7 @@ what the hardening removes.
 |---|---|---|
 | **Analyst** | An authenticated Qlik Sense user in a browser, using the extension. | The Qlik session (cookie/ticket), resolved to a user id by the proxy. |
 | **Proxy** | A trusted server process on the Qlik node holding the upstream credential. The only component that talks to Anthropic. | Service identity (least-privilege Windows service account). |
-| **Upstream** | Anthropic API (hosted) or local Ollama (on-node). | Out of identity scope — a downstream dependency. |
+| **Upstream** | Anthropic API (hosted) or local Ollama (on-node). | Out of identity scope, a downstream dependency. |
 
 ## Trust boundaries
 
@@ -56,13 +56,13 @@ A grep for `crypto-js`, `x-api-key`, `getAPIKey`, or `dangerous-direct-browser` 
 | Risk | Disposition |
 |---|---|
 | A compromised proxy host exposes the key. | Mitigated (not solved) by OS secret store + least-privilege service account. |
-| A valid analyst can still cause cost / data egress. | Mitigated by per-user rate limits and audit; not eliminated — an authorised user asking questions is the intended use. |
+| A valid analyst can still cause cost / data egress. | Mitigated by per-user rate limits and audit; not eliminated, an authorised user asking questions is the intended use. |
 | The local-model path trusts the node. | Accepted: no secret is involved; nothing leaves the machine. |
 | Qlik validation API outage blocks all users. | A dependency failure returns `503` (not `401`); readiness checks surface it at startup. |
 
 ## See also
 
-- [`concurrency-model.md`](./concurrency-model.md) — the companion contract for
+- [`concurrency-model.md`](./concurrency-model.md), the companion contract for
   request admission, queueing, and cancellation.
 - The per-area hardening specifications (credential custody, caller authentication,
   transport hardening, proxy-only transport) implement the controls named above.

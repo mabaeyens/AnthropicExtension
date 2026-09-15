@@ -3,10 +3,10 @@
 All notable changes to this extension are documented here.
 
 > ℹ️ **As of 0.5.0 the extension is proxy-only.** The browser no longer holds an API key and never
-> calls `api.anthropic.com` directly — every request goes through the hardened proxy (under
+> calls `api.anthropic.com` directly, every request goes through the hardened proxy (under
 > [`proxy/`](./proxy)), which holds the Anthropic key server-side and authenticates the caller by
 > their Qlik session. The extension therefore **requires the proxy to be deployed** (with TLS +
-> Qlik-session validation configured). Chart data is still sent to the configured LLM endpoint —
+> Qlik-session validation configured). Chart data is still sent to the configured LLM endpoint,
 > review what leaves your environment before use. Selecting a **local model** (Ministral via
 > Ollama) keeps inference on-machine.
 
@@ -23,36 +23,36 @@ All notable changes to this extension are documented here.
 
 ### Added
 
-- **[`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md)** — console snippets and checks written to be
+- **[`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md)**, console snippets and checks written to be
   run by a future reader (or handed to an AI assistant to run). Covers the duplicate-object
-  case with an enumerator that reports *"AI Assistant already installed on sheet … — object
-  … — settings: …"*, a probe for the configuration actually in effect, and the NetworkError /
+  case with an enumerator that reports *"AI Assistant already installed on sheet …, object
+  …, settings: …"*, a probe for the configuration actually in effect, and the NetworkError /
   proxy-status / missing-model / slow-local-model paths.
 
 ### Fixed
 
 - **A second extension object no longer hijacks the configuration.** `config` is one module
   singleton shared by every object of this extension in the app, while the properties are
-  per object — so every object's `paint()` wrote the shared state and the last one painted
+  per object, so every object's `paint()` wrote the shared state and the last one painted
   won. Navigating to a sheet holding a second, never-configured object committed that
   object's untouched dropdown default (`props.model = 'claude-haiku-4-5'`) over the
   configured model; with a blank Proxy URL that model is unreachable, so the panel fell
   through to the first available local model, **Ministral 3 8B**. Its blank URLs also
   produced the permanent *"No endpoint configured"* banner. Exactly one object now owns the
   shared configuration: an object claims it when there is no owner, when it already is the
-  owner, or when it is **configured** (has a URL property) and the incumbent is not — so a
+  owner, or when it is **configured** (has a URL property) and the incumbent is not, so a
   never-configured object can never keep ownership from a real one, whichever paints first.
   An owner that stops painting (deleted, or on a sheet nobody visits) goes stale after 30 s
   and a configured object takes over. Non-owners are ignored, with one console warning.
 - **The configuration banner clears itself.** Validation ran once, inside the one-time init
-  block, and the message was appended as a chat message with no clear path — so a banner
+  block, and the message was appended as a chat message with no clear path, so a banner
   raised before the owner's URLs were applied stayed for the whole session. It is now a
   dedicated panel element re-rendered on every owner paint, appearing and disappearing with
   the actual state.
 
 - **The active model stops changing on its own.** 0.5.3's `resolveActiveModel()` both
   *assigned* and *persisted* its availability correction. With a blank **Proxy URL** the
-  Claude models are unavailable, so any render — including simply opening the picker —
+  Claude models are unavailable, so any render, including simply opening the picker,
   rewrote the stored choice to the first available entry, **Ministral 3 8B**, over the 3B
   the operator had configured. It also wrote that substitute with the old `MODEL_LOCKED`
   flag set, which made `paint()` skip both of its property branches: the "Default model"
@@ -69,11 +69,11 @@ All notable changes to this extension are documented here.
   exists ⇒ initialised). The widget is appended to `document.body` and outlives sheet
   navigation, so that check answers "yes" even to a freshly instantiated module set that
   has never run `paint()`, never seen the object's properties, and still holds the shipped
-  config literals — which it would then render into the picker. Ownership is now module
+  config literals, which it would then render into the picker. Ownership is now module
   state (`uiController.isInitialized()`): a non-owner renders nothing at all, and an
   instance that does initialise rebuilds the widget it can actually drive.
 - **An unreachable in-panel pick falls back to the object's Default model**, not to the
-  first entry in the registry — which is how Ministral 3 8B kept displacing a configured 3B.
+  first entry in the registry, which is how Ministral 3 8B kept displacing a configured 3B.
 
 ### Changed
 
@@ -90,7 +90,7 @@ All notable changes to this extension are documented here.
   dropping the object's default. Availability filtering applies to the chat panel's picker
   only; the settings notices say which backend is off.
 - **`config.js` ships blank `API.PROXY_URL` / `API.LOCAL.URL`.** The localhost literals made
-  an unconfigured object look configured and pushed the failure to request time — and, since
+  an unconfigured object look configured and pushed the failure to request time, and since
   a restore happens before the first `paint()`, availability was briefly judged against them
   rather than against the object's properties.
 
@@ -107,7 +107,7 @@ All notable changes to this extension are documented here.
   the Claude models unavailable: they are withheld from the properties dropdown *and*
   from the chat panel's "Pick model" menu, so an Anthropic-free (local-only) deployment
   never offers a model it cannot reach. Leaving **Local model URL** empty does the same
-  for the Ministral models. The object's settings explain which backend is off and why —
+  for the Ministral models. The object's settings explain which backend is off and why;
   the chat panel stays free of configuration notices. If *neither* URL is set the full
   registry is still offered, so a fresh install is never left with an empty picker.
 
@@ -115,7 +115,7 @@ All notable changes to this extension are documented here.
 
 - **The selected model survives sheet navigation.** Moving to a sheet where the extension
   object is not placed left the body-global widget standing while a fresh AMD module set
-  was instantiated — `config.API.MODEL` reverted to the shipped default (Haiku) and the
+  was instantiated, `config.API.MODEL` reverted to the shipped default (Haiku) and the
   picker redrew from it, silently changing the model under the user. `paint()` cannot fix
   this because it never runs on those sheets, so the effective choice is now mirrored into
   `sessionStorage` (`config.saveModelState` / `restoreModelState`) and restored at module
@@ -128,7 +128,7 @@ All notable changes to this extension are documented here.
 
 ### Changed
 
-- The URL properties are **authoritative, including when blank** — a blank field no longer
+- The URL properties are **authoritative, including when blank**, a blank field no longer
   falls back to the `config.js` default. An untouched object still gets the defaults.
 
 ## [0.5.2] - 2026-07-27
@@ -137,7 +137,7 @@ All notable changes to this extension are documented here.
 
 - **Model picker no longer shows a stale model.** Selecting a model in the extension's
   **Default model** property left the panel saying “Talking to Haiku 4.5” (and the menu
-  checkmark on the old entry) even though `config.API.MODEL` had already changed — so requests
+  checkmark on the old entry) even though `config.API.MODEL` had already changed, so requests
   went to one model while the UI named another. Two independent causes:
   - `renderModelPicker()` / `renderApiKeyStatus()` returned early whenever the module-level
     `$container` was null or pointed at a widget no longer in the document, silently skipping
@@ -167,7 +167,7 @@ All notable changes to this extension are documented here.
 
 - **Stop button.** A red “Stop” button appears in the panel while a response is generating and
   aborts it immediately, keeping any text produced so far and marking the message as stopped. It
-  reuses the existing abort handle (streamed and buffered paths alike) — most useful for local
+  reuses the existing abort handle (streamed and buffered paths alike), most useful for local
   models, which can generate for minutes. Stop **actually halts inference**, not just the UI: the
   browser aborts the request, and the proxy propagates the disconnect to the upstream so the model
   stops generating (streaming destroys the piped stream; the buffered path now aborts the in-flight
@@ -208,7 +208,7 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
   proxy reads it from `X-Qlik-Session` (a named virtual proxy uses `X-Qlik-Session-<prefix>`, set via
   `QLIK_SESSION_COOKIE`). The `x-qlik-session` header stays as an explicit ticket override.
 - **Input validation & model allowlist (P04):** per-route body-schema validation, request-size caps,
-  and a server-side model allowlist — invalid/oversize/disallowed requests are rejected before the
+  and a server-side model allowlist, invalid/oversize/disallowed requests are rejected before the
   upstream call.
 - **Transport hardening (P05):** strict CORS origin allowlist, security response headers, a modern
   TLS floor, and per-IP rate limiting.
@@ -221,31 +221,31 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
   bounded FIFO queue (`503` + `Retry-After` on overflow/timeout), streaming backpressure, upstream
   keep-alive pooling, and graceful drain on shutdown.
 - **Automated proxy setup.** `proxy/scripts/setup.ps1` (idempotent) does the mechanical
-  install steps on a Windows node — Node check, `npm ci`, optional self-signed dev cert +
+  install steps on a Windows node, Node check, `npm ci`, optional self-signed dev cert +
   trust, `.env` scaffolding from the template with the values you pass, and optional
   Windows-service registration. Site secrets (API key, Qlik auth) are supplied by you, never
   invented.
 - **Observability & service (P06):** structured JSON request logs, a separate audit log
   (who-asked-what-when, no bodies/secrets), `/health` · `/ready` · `/metrics`, boot-time config
   validation, and a Windows-service wrapper (auto-start/restart, log rotation).
-- **Client request lifecycle (E02):** at most one in-flight request per widget — Submit/Suggest are
+- **Client request lifecycle (E02):** at most one in-flight request per widget, Submit/Suggest are
   disabled while busy, a unified abort handle covers both buffered and streamed paths, the app-context
   cache is race-safe, and a proxy `503` surfaces as a friendly "busy, try again" message.
 - **Persistent floating widget.** The panel is a body-global singleton that persists across sheet
   navigation, so you can move between sheets and select charts from any of them. A single-instance
   guard prevents duplicate widgets/listeners, and per-fetch engine session objects are
   created-read-destroyed inline, so nothing leaks. (`teardown()` helpers exist for a genuine teardown
-  — page unload / tests — but are deliberately **not** wired to Qlik's per-sheet `destroy`, which
+  such as page unload / tests, but are deliberately **not** wired to Qlik's per-sheet `destroy`, which
   would otherwise remove the widget every time you change sheets.)
 - **Dev tooling & tests (E06/P07):** dev-only `package.json` + ESLint + `node:test` suites (an AMD
   test harness for the pure modules; integration + load/drain harness for the proxy) and GitHub
   Actions CI, path-filtered per artefact. The shipped runtime stays plain AMD (no build step).
 - **Log-verbosity levels.** Both the proxy and the extension now support **ERROR / WARN / INFO /
-  DEBUG** severity control. The proxy reads `LOG_LEVEL` from its `.env` (audit log unaffected — it
+  DEBUG** severity control. The proxy reads `LOG_LEVEL` from its `.env` (audit log unaffected, it
   is always written); the extension exposes a **Log level** setting in the properties panel that
   changes browser-console verbosity live. ERROR shows only errors; WARN adds warnings (incl. rejected
   requests); INFO adds one line per accepted action; DEBUG traces everything. Defaults to DEBUG for
-  test/demo — lower it to quieten output for production.
+  test/demo, lower it to quieten output for production.
 - **Config & release hardening (E05/E07):** all data-collection bounds centralised in `config.DATA`
   and validated at init; config validation surfaces problems in the panel; `package.ps1` fails on a
   `config.js`/`.qext` version mismatch; a `RELEASING.md` checklist and `scripts/pre-release-check.ps1`
@@ -270,7 +270,7 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 - **In-panel model picker.** A **Pick model** button sits to the right of *Submit* and
   *Suggest a chart*. It opens a drop-up listing every model in the registry, with the active one
   ticked. Choosing a different model asks *"This will clear your current conversation! Change
-  model?"* with a **Change model** / **Cancel** pair — conversation history can't meaningfully
+  model?"* with a **Change model** / **Cancel** pair, conversation history can't meaningfully
   cross models, so the thread is reset on switch. (With an empty thread the prompt is just
   *"Switch to …?"*.)
 - **Active model is always visible.** A *"Talking to \<model\>"* line sits under the submit row,
@@ -287,13 +287,13 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
     UIs flicker and crawl, and half-written markdown renders as visible noise. It also means no
     HTML is ever built from partial model output.
   - An in-flight stream is aborted (`AbortController`) when you start a new chat or switch model,
-    so a dead stream can't keep writing into discarded DOM — and the proxy destroys the upstream
+    so a dead stream can't keep writing into discarded DOM, and the proxy destroys the upstream
     request when the browser disconnects, so Ollama stops generating for nobody.
   - **Requires a proxy update**: `cm-llm-proxy` buffered every response, which defeats streaming.
     Both `/api/ollama` and `/api/anthropic` now pipe the upstream body through untouched when
     `stream: true` is requested. Verified end-to-end: 178 SSE frames, first at 577 ms of a 9.9 s
     total.
-- **Ministral 3 3B** as a second local model — roughly half the memory of the 8B at comparable
+- **Ministral 3 3B** as a second local model, roughly half the memory of the 8B at comparable
   speed. Uses the derived tag `ministral-3b-demo` (`FROM ministral-3:3b` + `PARAMETER num_ctx
   8192`); Ollama's 64k default context inflates the KV cache to ~10 GB and pushes the model almost
   entirely onto the CPU.
@@ -303,13 +303,13 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
   id strings. It drives both the properties-panel dropdown and the in-panel picker, so the two can
   no longer drift apart, and each local model carries its own Ollama tag.
 - The properties-panel **Model** dropdown is now the *default* model only. Once the picker is used,
-  `API.MODEL_LOCKED` stops `paint()` from re-applying the property — `paint()` runs on every
+  `API.MODEL_LOCKED` stops `paint()` from re-applying the property, `paint()` runs on every
   selection event and would otherwise silently revert the model mid-conversation.
 - `isLocalModel()` resolves via the registry's `local` flag instead of comparing against a single
   hard-coded id, and the Ollama model name comes from the selected entry's `tag`.
 - **"Suggest a chart" now tolerates off-schema JSON from smaller models.** Ministral 3 3B returns
   blocks with `//` comments, backtick-quoted fields, bare `Sum([Field])` values, extra keys, and
-  measures as `{ name, expression, … }` objects — none of which is valid JSON, so a strict
+  measures as `{ name, expression, … }` objects, none of which is valid JSON, so a strict
   `JSON.parse` discarded an otherwise usable suggestion with "Could not parse a chart
   specification from the response." Parsing is now three escalating passes: strict parse → repair
   (strip comments/trailing commas/backticks) → regex salvage of type/title/dimensions/measures.
@@ -320,7 +320,7 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
   ellipsis rather than wrapping them, so every label is now short ("API key", "Default model",
   "Proxy URL", "Local model URL") and the explanation moved to a wrapping help line under each
   field.
-- The **"No API key stored"** notice is hidden while a local model is selected — those need no key,
+- The **"No API key stored"** notice is hidden while a local model is selected, those need no key,
   so the warning was pure noise. Switching back to a Claude model in the picker brings it straight
   back if no key is stored.
 
@@ -330,13 +330,13 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 - **"Suggest a chart" failed to render** with `Could not render chart:
   Devhub.Cols.QdefOrQlibraryid, Devhub.Cols.QdefOrQlibraryid`. Columns were passed to
   `visualization.create()` as bare strings, which Qlik's client-side column mapper rejects when it
-  cannot match the token to a field or master-item id — one error per rejected column. Each column
+  cannot match the token to a field or master-item id, one error per rejected column. Each column
   is now wrapped in an explicit definition object (`{ qDef: { qFieldDefs: […] } }` for dimensions,
   `{ qDef: { qDef: '=…' } }` for measures), which always satisfies the validator. Master-item
   resolution to the underlying field/expression is unchanged.
 - A chart render failure now logs the spec **and** the resolved columns to the browser console, so
   a bad token can be identified without guesswork.
-- `package.ps1` stamped the `.qext` description twice (`v0.3.4 build 25 — v0.3.4 build 25 — …`).
+- `package.ps1` stamped the `.qext` description twice (`v0.3.4 build 25, v0.3.4 build 25, …`).
   The strip-pattern's literal em dash was mis-decoded under Windows PowerShell 5.1, so the existing
   prefix never matched; both sides of the replace now build the dash from its code point.
 
@@ -345,10 +345,10 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 ### Added
 - **Local model backend (Ministral 3 8B via Ollama).** The **Model** dropdown now offers
   *"Ministral 3 8B (local, via Ollama)"* alongside the Claude models. Selecting it routes the
-  request to a local model instead of Anthropic — **no API key required**. The extension speaks
+  request to a local model instead of Anthropic, **no API key required**. The extension speaks
   the OpenAI chat-completions format for this path and parses `choices[0].message.content`.
 - **"Local model URL"** property (Settings) to point at the Ollama endpoint. On QSEoW (HTTPS) this
-  must be an HTTPS endpoint — the browser cannot call `http://localhost:11434` directly
+  must be an HTTPS endpoint, the browser cannot call `http://localhost:11434` directly
   (mixed content), so requests go through the `cm-llm-proxy` `/api/ollama` route
   (default `https://localhost:3000/api/ollama`).
 - Per-backend request timeout: local calls use a 5-minute client timeout (`API.LOCAL.TIMEOUT`)
@@ -356,7 +356,7 @@ monorepo pair (proxy specs P01–P07, extension specs E01–E07). Fully unit-tes
 
 ### Notes / setup
 - Requires a local [Ollama](https://ollama.com) server and the model. Recommended setup on a
-  small (4 GB) GPU — bake an 8k context for responsiveness:
+  small (4 GB) GPU, bake an 8k context for responsiveness:
   ```
   ollama pull ministral-3:8b
   printf 'FROM ministral-3:8b\nPARAMETER num_ctx 8192\n' > Modelfile
@@ -443,11 +443,11 @@ the **real data model** and **complete table data** to Claude.
 - **Conversation thread with memory:** the panel is a chat thread that persists across
   sheet navigation and chart re-selection; follow-up questions retain context. Includes a
   **New chat** reset. The most recent exchange shows at the **top**, history below.
-- **Markdown rendering** of responses (bundled `marked.js`) — headings, lists, tables, code.
+- **Markdown rendering** of responses (bundled `marked.js`), headings, lists, tables, code.
 - **Copy button** on every response (copies the raw Markdown).
 - **Suggest a chart:** Claude proposes a chart spec (type + dimensions + measure
   expressions) and the extension renders a **live preview** in the panel via the in-session
-  Qlik visualization API — as the logged-in user, no proxy/MCP. The suggestion builds on the
+  Qlik visualization API, as the logged-in user, no proxy/MCP. The suggestion builds on the
   previous response plus your prompt.
 - **Add to sheet (Edit mode):** place a suggested chart on the current sheet below existing
   objects; if the sheet is **full**, existing charts are left untouched and you're offered a
@@ -461,17 +461,17 @@ the **real data model** and **complete table data** to Claude.
 - **Full hypercube retrieval:** large tables now page through the **entire** result set
   instead of sending only the engine's initial page.
 - **Richer app context:** the data model is collected via `getTablesAndKeys` plus a
-  field/dimension/measure session object — real table names, the full field list, and
-  **master dimensions/measures (with expressions)** — and serialized in full to the LLM.
+  field/dimension/measure session object, real table names, the full field list, and
+  **master dimensions/measures (with expressions)**, and serialized in full to the LLM.
 - **Robust chart selection:** native charts (bar/line/combo/box/etc.) and older short
   engine-ids resolve via engine-validated candidate matching.
 - `version` set to `0.3.0`.
 
 ### Fixed
 - App context previously sent only a placeholder "Data Model" table with few/no fields
-  (fragile `FieldList()` scrape + discarded master items) — Claude now receives the real
+  (fragile `FieldList()` scrape + discarded master items), Claude now receives the real
   tables, fields, and master items.
-- Chart-suggestion parsing rejected valid specs (e.g. `histogram`) — parsing is now
+- Chart-suggestion parsing rejected valid specs (e.g. `histogram`), parsing is now
   structural and rendering decides supported types (maps excluded); histogram handled.
 - Collapsed panel no longer traps clicks on the native Qlik UI / Edit-sheet button.
 
@@ -488,7 +488,7 @@ the **real data model** and **complete table data** to Claude.
 - **Map visualizations** are not yet supported for selection or chart creation.
 - **Add to sheet** writes to the live app and therefore requires the sheet to be in **Edit
   mode**.
-- Experimental/demo only — see the warning above and `INSTALL.md`.
+- Experimental/demo only, see the warning above and `INSTALL.md`.
 
 ## [0.2.0] - 2026-06-12
 
@@ -498,7 +498,7 @@ runnable with **only an API key**.
 
 ### Added
 - **Direct browser mode (default):** calls `https://api.anthropic.com/v1/messages` directly using
-  the `anthropic-version` and `anthropic-dangerous-direct-browser-access` headers — **no proxy
+  the `anthropic-version` and `anthropic-dangerous-direct-browser-access` headers, **no proxy
   required**.
 - **Data-model context on first use:** the app's field names and master items are collected once per
   session and sent with the request so Claude can interpret the selected chart in context.
@@ -506,12 +506,12 @@ runnable with **only an API key**.
   and an optional **Proxy URL**.
 - **Real API-key encryption:** the key is encrypted with CryptoJS AES before being written to
   `localStorage` and is shared across all Qlik apps (enter once).
-- Inlined panel template (`js/template.js`) — no more fragile hard-coded template fetch.
+- Inlined panel template (`js/template.js`), no more fragile hard-coded template fetch.
 
 ### Changed
 - **Default model is now `claude-haiku-4-5`** (the old `claude-3-haiku-20240307` was retired and
   caused requests to fail).
-- The local proxy is now **optional** — set a Proxy URL in the properties to use it.
+- The local proxy is now **optional**, set a Proxy URL in the properties to use it.
 - `paint()` now initializes the UI **once per instance** instead of on every Qlik render cycle,
   preventing panel-state loss and duplicate event handlers.
 - `DEBUG_MODE` and the in-panel debug area now default to **off**.
@@ -519,9 +519,9 @@ runnable with **only an API key**.
 - README rewritten; `version` set to `0.2.0`.
 
 ### Fixed
-- API key was previously stored in **plaintext** despite docs claiming encryption — now actually
+- API key was previously stored in **plaintext** despite docs claiming encryption, now actually
   encrypted.
-- Requests omitted the `anthropic-version` header (worked only via the proxy) — now sent in direct
+- Requests omitted the `anthropic-version` header (worked only via the proxy), now sent in direct
   mode.
 
 ### Documentation
@@ -537,7 +537,7 @@ runnable with **only an API key**.
   Security Policy (`connect-src`) once. See `INSTALL.md`.
 - Not tested on Qlik Cloud.
 - The encryption passphrase is bundled in the extension, so key storage is obfuscation, not strong
-  secrecy — appropriate for on-prem internal demos only.
+  secrecy, appropriate for on-prem internal demos only.
 
 [0.3.3]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.3
 [0.3.2]: https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.3.2

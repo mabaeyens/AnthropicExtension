@@ -127,15 +127,15 @@ NetworkError. Visit `https://<proxy-host>:3000/health` in the same browser and a
 warning (Firefox: **Advanced… → Accept the Risk and Continue**). Exceptions are per origin:
 `localhost:3000` and `myhost:3000` each need their own.
 
-> If Firefox instead shows **`MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY`** with no "Accept the Risk" option at all, that's not a trust problem — the cert itself is malformed: its `basicConstraints` extension is `CA:TRUE`, which Firefox's strict validator refuses to use as a server cert (Chrome/Windows tolerate it, which is why this only shows up in Firefox). Regenerate it per `proxy/README.md` → Certificates, with `basicConstraints=critical,CA:FALSE` explicitly set — accepting a warning can't fix this, the cert has to be reissued.
+> If Firefox instead shows **`MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY`** with no "Accept the Risk" option at all, that's not a trust problem, the cert itself is malformed: its `basicConstraints` extension is `CA:TRUE`, which Firefox's strict validator refuses to use as a server cert (Chrome/Windows tolerate it, which is why this only shows up in Firefox). Regenerate it per `proxy/README.md` → Certificates, with `basicConstraints=critical,CA:FALSE` explicitly set, accepting a warning can't fix this, the cert has to be reissued.
 >
-> Also note Firefox keeps its **own certificate store**, separate from Windows — trusting the cert via `certutil` (below) doesn't reach Firefox unless you also import it directly into Firefox or enable `security.enterprise_roots.enabled` in `about:config` (see `proxy/README.md` → Certificates).
+> Also note Firefox keeps its **own certificate store**, separate from Windows, trusting the cert via `certutil` (below) doesn't reach Firefox unless you also import it directly into Firefox or enable `security.enterprise_roots.enabled` in `about:config` (see `proxy/README.md` → Certificates).
 
-> If the proxy shares a **hostname** with the Qlik hub (e.g. both reached as `myhost`, just a different port), you won't get a click-through warning at all — Chrome/Edge instead refuse outright with *"You cannot visit `myhost` right now because the website uses HSTS."* This happens because the Qlik hub (port 443) already sent a `Strict-Transport-Security` header for that bare hostname, and HSTS is enforced per hostname regardless of port, with no bypass. The only fix is to actually trust the cert in the OS store first (`proxy/README.md` → Certificates), not click through it:
+> If the proxy shares a **hostname** with the Qlik hub (e.g. both reached as `myhost`, just a different port), you won't get a click-through warning at all, Chrome/Edge instead refuse outright with *"You cannot visit `myhost` right now because the website uses HSTS."* This happens because the Qlik hub (port 443) already sent a `Strict-Transport-Security` header for that bare hostname, and HSTS is enforced per hostname regardless of port, with no bypass. The only fix is to actually trust the cert in the OS store first (`proxy/README.md` → Certificates), not click through it:
 > ```powershell
 > certutil -user -addstore Root proxy\certs\localhost3000-cert.pem
 > ```
-> then fully close and reopen the browser (not just the tab — HSTS/cert state is cached per process).
+> then fully close and reopen the browser (not just the tab, HSTS/cert state is cached per process).
 
 **You used `localhost` from a remote browser.** `https://localhost:3000` resolves to the
 *browser's* machine. Use the proxy host's name.
@@ -210,3 +210,6 @@ Collect this before asking for help:
 3. The browser console with **Log level** set to `Debug`, filtered to `[AI]`/`[DEBUG]`.
 4. The proxy log around the same moment (`LOG_DIR` in its `.env`, else stdout), including
    the `requestId` from the failed response.
+
+Then open an issue with that information at
+[github.com/mabaeyens/AnthropicExtension/issues](https://github.com/mabaeyens/AnthropicExtension/issues).

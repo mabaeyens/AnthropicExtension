@@ -1,4 +1,5 @@
-# Creates AnthropicExtension-v{version}.zip in the project root.
+# Maintainer/dev tooling: creates AnthropicExtension-v{version}.zip in the project root
+# from the runtime files (not needed to just run the extension from source).
 # Run from any location: .\package.ps1
 
 Set-Location $PSScriptRoot

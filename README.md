@@ -15,12 +15,14 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > `scripts/setup.ps1` automates the install). The proxy is versioned and tagged independently of the
 > extension (`proxy-vX.Y.Z` vs `vX.Y.Z`); **extension v0.5.5 pairs with proxy v2.0.2**.
 
-> ## ⚠️ Demo only, no warranty, no liability
+> ## ⚠️ Independent project, not a Qlik product
 >
-> This is a **demonstration asset (extension v0.5.5, proxy v2.0.2)**, not a supported Qlik offering or product. It is **not** hardened for
-> production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
-> accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
-> customer, production, or other environment. **Use entirely at your own risk.**
+> This is an independently built and maintained extension (extension v0.5.5, proxy v2.0.2). It is
+> **not** a Qlik product, offering, or supported integration, and carries no Qlik warranty or support
+> commitment. It is actively used and maintained, but support comes from the author, not Qlik, see the
+> Contributing section below to report an issue. **Neither Qlik nor the author accept any
+> liability** for any issue, data exposure, cost, or damage arising from its use in any customer,
+> production, or other environment. **Use at your own risk.**
 >
 > ### Your data leaves your environment
 >
@@ -98,8 +100,9 @@ What this is actually good for, based on using it in demos and on real apps:
 - **Showing customers what an on-prem AI assistant could look like** without waiting for a product
   roadmap, and without handing anyone an API key.
 
-Keep in mind it is a demo asset. It is good at reading a chart and drafting an explanation. It is not
-a governed, supported analytics feature, and it should not be pointed at sensitive data.
+Keep in mind it is an independent, community-supported extension. It is good at reading a chart and
+drafting an explanation. It is not a governed, Qlik-supported analytics feature, and it should not be
+pointed at sensitive data.
 
 ## Requirements
 
@@ -361,28 +364,11 @@ AnthropicExtension/
         └── marked.min.js    # marked 12.x, bundled Markdown renderer
 ```
 
-## Status
-
-- [x] Data extraction from native charts (bar, line, combo, box, etc.); engine-validated id resolution
-- [x] **Full hypercube** retrieval for large tables (with a ~65 KB pre-send warning)
-- [x] Analysis with Claude **through the hardened proxy** (key held server-side; Qlik-session auth)
-- [x] **Local model** backend (Ministral 3 8B / 3B via Ollama), no API key, data stays on-machine
-- [x] **In-panel model picker**: switch models mid-session; the answering model is named per response
-- [x] **Streamed answers** (token by token), with a toggle and an automatic buffered fallback
-- [x] **Conversation thread** with memory, Markdown rendering, and per-response copy
-- [x] **Real data-model context** (tables, fields, master dimensions/measures) sent on first use
-- [x] **Suggest a chart** (live preview) and **add to sheet** (Edit mode; new-sheet fallback)
-- [x] **Proxy-only transport** (v0.5.0), no API key in the browser; single-flight request lifecycle;
-      configurable log verbosity (ERROR/WARN/INFO/DEBUG)
-- [x] **Stop button** (v0.5.1), aborts a generating answer and halts inference upstream (proxy 2.0.0)
-- [x] **Concise local-model answers** (v0.5.1), brevity suffix on local calls only
-- [ ] **Map** visualizations (selection / creation), not yet supported
-- Qlik Cloud is **out of scope** (Cloud already has native AI assistants)
-
 ## Notes
 
-- **Demo only.** Not a Qlik product and not production-hardened. **Neither Qlik nor the author accept
-  any liability** for issues, data exposure, or costs in any environment, use at your own risk.
+- **Independent project.** Not a Qlik product, offering, or supported integration; support comes from
+  the author via GitHub Issues, not Qlik support channels. **Neither Qlik nor the author accept any
+  liability** for issues, data exposure, or costs in any environment, use at your own risk.
 - **Data egress.** Asking a question sends chart data (the full table/hypercube), table/field names,
   and master-item definitions to an external LLM. Don't use it with sensitive/regulated/personal data
   unless that egress is permitted.
@@ -397,8 +383,8 @@ AnthropicExtension/
 
 ## Author
 
-Created and maintained by **mabaeyens**. (Demo asset, see the no-warranty / no-liability notice
-above; not a Qlik product.)
+Created and maintained by **mabaeyens**. (Independent project, not a Qlik product, see the
+no-warranty / no-liability notice above.)
 
 ## 🛠️ Development Workflow: Human-AI Collaboration
 
@@ -414,7 +400,7 @@ This approach demonstrates the ability to direct advanced AI tools to accelerate
 
 This project is licensed under the **MIT License**. You can find the full text in the [`LICENSE`](./LICENSE) file.
 
-> **No warranty / no liability.** Consistent with the MIT License, this demo asset is provided
+> **No warranty / no liability.** Consistent with the MIT License, this project is provided
 > "AS IS", without warranty of any kind. **Neither Qlik nor the author is liable** for any claim,
 > damage, data exposure, or cost arising from its use, including in customer or production
 > environments. It is **not** a Qlik product or supported integration.
