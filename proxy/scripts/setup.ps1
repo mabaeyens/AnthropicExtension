@@ -26,10 +26,10 @@
 .EXAMPLE
   # Local dev: deps + a trusted dev-CA-signed cert (SAN: localhost, 127.0.0.1, and the
   # real hostname clients will use) + a starter .env, then run by hand.
-  pwsh scripts/setup.ps1 -DevCert -TrustCert -CertHosts 'spmad-mby1,spmad-mby1.qliktech.com' -ApiKey 'sk-ant-...' `
-    -QlikSessionUrl 'https://spmad-mby1:4243/qps/session' `
+  pwsh scripts/setup.ps1 -DevCert -TrustCert -CertHosts 'your-qlik-host,your-qlik-host.your-domain.com' -ApiKey 'sk-ant-...' `
+    -QlikSessionUrl 'https://your-qlik-host:4243/qps/session' `
     -QlikCert './certs/client.pem' -QlikKey './certs/client_key.pem' `
-    -Origins 'https://spmad-mby1' -LogLevel DEBUG
+    -Origins 'https://your-qlik-host' -LogLevel DEBUG
 
 .EXAMPLE
   # Production node: deps + .env + register the Windows service (CA cert set in .env).
@@ -46,7 +46,7 @@ param(
   [ValidateSet('ERROR', 'WARN', 'INFO', 'DEBUG')]
   [string] $LogLevel,
   [switch] $DevCert,
-  # Comma-separated, e.g. 'spmad-mby1,spmad-mby1.qliktech.com' — a string, not an array:
+  # Comma-separated, e.g. 'your-qlik-host,your-qlik-host.your-domain.com' — a string, not an array:
   # array-typed params don't reliably survive a `pwsh -File` invocation from outside
   # PowerShell (the comma can arrive as literal text rather than an element separator).
   [string] $CertHosts = '',

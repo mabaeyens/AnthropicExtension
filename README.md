@@ -13,11 +13,11 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > local models, a **Local model URL**) in the extension settings, see
 > [Proxy (required)](#proxy-required) and [`proxy/README.md`](./proxy/README.md) (its
 > `scripts/setup.ps1` automates the install). The proxy is versioned and tagged independently of the
-> extension (`proxy-vX.Y.Z` vs `vX.Y.Z`); **extension v0.5.4 pairs with proxy v2.0.0**.
+> extension (`proxy-vX.Y.Z` vs `vX.Y.Z`); **extension v0.5.5 pairs with proxy v2.0.2**.
 
 > ## ⚠️ Demo only, no warranty, no liability
 >
-> This is a **demonstration asset (extension v0.5.4, proxy v2.0.0)**, not a supported Qlik offering or product. It is **not** hardened for
+> This is a **demonstration asset (extension v0.5.5, proxy v2.0.2)**, not a supported Qlik offering or product. It is **not** hardened for
 > production and is **not** a Qlik offering or a supported integration. **Neither Qlik nor the author
 > accept any liability** for any issue, data exposure, cost, or damage arising from its use in any
 > customer, production, or other environment. **Use entirely at your own risk.**
@@ -41,9 +41,6 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > The production-hardening architecture (implemented across the proxy and extension in v0.5.0):
 > [`docs/security-model.md`](./docs/security-model.md) and
 > [`docs/concurrency-model.md`](./docs/concurrency-model.md).
-
-> ℹ️ This repository is **not public yet**; it may be made public in the future. The disclaimer above
-> applies regardless.
 
 ## Description
 
@@ -118,12 +115,12 @@ a governed, supported analytics feature, and it should not be pointed at sensiti
 
 ## Download
 
-**Latest release: [v0.5.4](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.5.4)**.
-Download `AnthropicExtension-v0.5.4.zip` from the
+**Latest release: [v0.5.5](https://github.com/mabaeyens/AnthropicExtension/releases/tag/v0.5.5)**.
+Download `AnthropicExtension-v0.5.5.zip` from the
 [releases page](https://github.com/mabaeyens/AnthropicExtension/releases). See
 [`CHANGELOG.md`](./CHANGELOG.md) for what changed.
 
-The proxy ships separately as **[proxy-v2.0.0](https://github.com/mabaeyens/AnthropicExtension/releases/tag/proxy-v2.0.0)**
+The proxy ships separately as **[proxy-v2.0.2](https://github.com/mabaeyens/AnthropicExtension/releases/tag/proxy-v2.0.2)**
 (source under [`proxy/`](./proxy), notes in [`proxy/CHANGELOG.md`](./proxy/CHANGELOG.md)).
 
 ## Installation
@@ -132,7 +129,7 @@ You can either use the packaged release zip or copy the repository folder direct
 
 1. Get the extension into the Qlik Sense extensions directory:
    - **Enterprise (QSEoW)**: in the QMC → **Extensions → Import**, upload
-     `AnthropicExtension-v0.5.4.zip`.
+     `AnthropicExtension-v0.5.5.zip`.
    - **Desktop**: unzip the release into
      `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\` (or copy this repo
      folder there).
@@ -204,7 +201,7 @@ and operations are in [`proxy/README.md`](./proxy/README.md); release notes in
 [`proxy/CHANGELOG.md`](./proxy/CHANGELOG.md).
 
 > **Version pairing.** The proxy ships on its own cadence under `proxy-vX.Y.Z` tags. Extension
-> **v0.5.4** requires **proxy v2.0.0 or later**: v2.0.0 makes Qlik-session auth mandatory, moves the
+> **v0.5.5** requires **proxy v2.0.0 or later**: v2.0.0 makes Qlik-session auth mandatory, moves the
 > Anthropic key server-side, and adds the cancel propagation that makes **Stop** actually halt
 > inference.
 
@@ -336,7 +333,6 @@ AnthropicExtension/
 ├── README.md                # This file
 ├── CHANGELOG.md             # Release notes
 ├── INSTALL.md               # Deployment / run instructions
-├── RELEASING.md             # Immutable-release checklist
 ├── diagrams.md              # Data-flow & sequence diagrams (Mermaid)
 ├── icon.png
 ├── package.json             # Dev-only: ESLint + node:test (NOT shipped; runtime stays AMD)

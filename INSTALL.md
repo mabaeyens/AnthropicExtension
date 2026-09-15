@@ -1,6 +1,6 @@
 # Install and run
 
-Extension v0.5.4, proxy v2.0.0. Client-managed Qlik Sense on Windows (Desktop or Enterprise).
+Extension v0.5.5, proxy v2.0.2. Client-managed Qlik Sense on Windows (Desktop or Enterprise).
 
 > **Demo only, no warranty, no liability.** This is a demonstration asset, not a Qlik product.
 > Neither Qlik nor the author accept any liability for any issue, data exposure, cost or damage in
@@ -95,7 +95,7 @@ same host on 3000 works fine.
 ## 3. Install the extension
 
 **Enterprise (QSEoW):** QMC, then Extensions, then Import, and upload
-`AnthropicExtension-v0.5.4.zip`.
+`AnthropicExtension-v0.5.5.zip`.
 
 **Desktop:** unzip into
 
@@ -183,6 +183,6 @@ trusted, wrong hostname, a duplicate object in the app, and what the proxy statu
 Releases are immutable, so upgrading is importing the newer zip over the old one in the QMC and hard
 reloading the sheet. Your object settings survive.
 
-Watch the pairing: extension v0.5.4 needs proxy v2.0.0 or later. v2.0.0 made Qlik session
+Watch the pairing: extension v0.5.5 needs proxy v2.0.0 or later. v2.0.0 made Qlik session
 authentication mandatory, moved the API key server side, and made the Stop button actually halt
 inference. Coming from an older proxy is a breaking change, so re-read the `.env` list in step 1.
