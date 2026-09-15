@@ -333,7 +333,7 @@ ARQ = [
         ["Endpoint del proxy (hosted)", "https://<host>:3000/api/anthropic (por defecto en config.js: localhost)"],
         ["Endpoint del proxy (local)", "https://<host>:3000/api/ollama"],
         ["Modelo predeterminado", "claude-haiku-4-5"],
-        ["Modelos disponibles", "claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-8, Ministral 3 8B/3B (local)"],
+        ["Modelos disponibles", "claude-haiku-4-5, claude-sonnet-5, claude-opus-5, Ministral 3 8B/3B (local)"],
         ["max_tokens", "4000"],
         ["Tiempo de espera", "60 000 ms (hosted) · 300 000 ms (modelo local)"],
         ["Ventana de contexto (aprox.)", "200 000 tokens (hosted) · 8 192 (Ministral local)"],

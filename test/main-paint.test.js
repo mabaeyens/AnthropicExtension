@@ -70,18 +70,18 @@ test('an in-panel pick overrides the property and survives repaints', async () =
   const { config, paint, active } = setup();
   await paint('ministral-local-3b', { localUrl: OLLAMA, proxyUrl: ANTHROPIC });
 
-  config.API.MODEL_PICK = 'claude-opus-4-8';        // what applyModelChange() does
-  assert.equal(active(), 'claude-opus-4-8');
+  config.API.MODEL_PICK = 'claude-opus-5';        // what applyModelChange() does
+  assert.equal(active(), 'claude-opus-5');
 
   // Qlik repaints on every selection event, property unchanged — must not revert.
   await paint('ministral-local-3b', { localUrl: OLLAMA, proxyUrl: ANTHROPIC });
-  assert.equal(active(), 'claude-opus-4-8');
+  assert.equal(active(), 'claude-opus-5');
 });
 
 test('editing the property overrides an in-panel pick', async () => {
   const { config, paint, active } = setup();
   await paint('claude-haiku-4-5', { proxyUrl: ANTHROPIC, localUrl: OLLAMA });
-  config.API.MODEL_PICK = 'claude-opus-4-8';
+  config.API.MODEL_PICK = 'claude-opus-5';
 
   await paint('ministral-local-3b', { proxyUrl: ANTHROPIC, localUrl: OLLAMA });
   assert.equal(config.API.MODEL_PICK, null, 'a property edit clears the pick');
@@ -103,21 +103,21 @@ test('a blank Proxy URL withholds the Claude models', async () => {
 test('an unavailable model is substituted for display, NOT overwritten', async () => {
   const { config, paint, active } = setup();
   await paint('ministral-local-3b', { proxyUrl: '', localUrl: OLLAMA });
-  config.API.MODEL_PICK = 'claude-opus-4-8';   // picked while the proxy was still set
+  config.API.MODEL_PICK = 'claude-opus-5';   // picked while the proxy was still set
 
   // Claude is off, so something reachable is shown instead...
-  assert.notEqual(active(), 'claude-opus-4-8');
+  assert.notEqual(active(), 'claude-opus-5');
   // ...but the recorded choice is untouched, and returns the moment the proxy is back.
-  assert.equal(config.API.MODEL_PICK, 'claude-opus-4-8');
+  assert.equal(config.API.MODEL_PICK, 'claude-opus-5');
   await paint('ministral-local-3b', { proxyUrl: ANTHROPIC, localUrl: OLLAMA });
-  assert.equal(active(), 'claude-opus-4-8');
+  assert.equal(active(), 'claude-opus-5');
 });
 
 test('an unreachable pick falls back to the property, not to registry order', async () => {
   const { config, paint, active } = setup();
   // The object is configured for the 3B; a pick made earlier points at unreachable Claude.
   await paint('ministral-local-3b', { proxyUrl: '', localUrl: OLLAMA });
-  config.API.MODEL_PICK = 'claude-opus-4-8';
+  config.API.MODEL_PICK = 'claude-opus-5';
   assert.equal(active(), 'ministral-local-3b',
     'the operator’s 3B — NOT Ministral 3 8B, which merely sorts first in the registry');
 

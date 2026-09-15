@@ -10,6 +10,15 @@ All notable changes to this extension are documented here.
 > review what leaves your environment before use. Selecting a **local model** (Ministral via
 > Ollama) keeps inference on-machine.
 
+## [0.5.5] - 2026-09-15
+
+### Fixed
+
+- **Model registry updated to the current Claude generation.** `claude-sonnet-4-6` →
+  `claude-sonnet-5` and `claude-opus-4-8` → `claude-opus-5` in `API.MODELS` and
+  `API.CONTEXT_WINDOWS` (`js/config.js`); Haiku 4.5 is unchanged, still current. The old
+  IDs were stale model names that no longer resolve upstream.
+
 ## [0.5.4] - 2026-07-27
 
 ### Added

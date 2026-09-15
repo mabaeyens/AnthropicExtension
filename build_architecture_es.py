@@ -133,7 +133,7 @@ def build():
         [
             [u'Endpoint directo', u'https://api.anthropic.com/v1/messages'],
             [u'Modelo predeterminado', u'claude-haiku-4-5'],
-            [u'Modelos disponibles', u'claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-8'],
+            [u'Modelos disponibles', u'claude-haiku-4-5, claude-sonnet-5, claude-opus-5'],
             [u'max_tokens', u'4000'],
             [u'anthropic-version', u'2023-06-01'],
             [u'Tiempo de espera', u'60000 ms (60 s)'],

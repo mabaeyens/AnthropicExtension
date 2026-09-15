@@ -36,8 +36,8 @@ define([], function() {
     // Extension version + build — single source of truth shown in the panel
     // footer and the settings panel. VERSION matches AnthropicExtension.qext;
     // bump BUILD by 1 on every package.
-    VERSION: '0.5.4',
-    BUILD: 44,
+    VERSION: '0.5.5',
+    BUILD: 45,
     // Author credit shown in the panel footer (also set in AnthropicExtension.qext).
     AUTHOR: 'mabaeyens',
 
@@ -72,8 +72,8 @@ define([], function() {
       // chat-completions format, no API key); `tag` is the Ollama model name.
       MODELS: [
         { id: 'claude-haiku-4-5',   label: 'Haiku 4.5',        hint: 'fast, low cost' },
-        { id: 'claude-sonnet-4-6',  label: 'Sonnet 4.6',       hint: 'balanced' },
-        { id: 'claude-opus-4-8',    label: 'Opus 4.8',         hint: 'most capable' },
+        { id: 'claude-sonnet-5',    label: 'Sonnet 5',         hint: 'balanced' },
+        { id: 'claude-opus-5',      label: 'Opus 5',           hint: 'most capable' },
         { id: 'ministral-local',    label: 'Ministral 3 8B',   hint: 'local, via Ollama',
           local: true, tag: 'ministral-3-demo' },
         // Derived from ministral-3:3b with num_ctx 8192 — Ollama's 64k default
@@ -113,8 +113,8 @@ define([], function() {
       CONTEXT_WINDOW: 200000,
       CONTEXT_WINDOWS: {
         'claude-haiku-4-5': 200000,
-        'claude-sonnet-4-6': 200000,
-        'claude-opus-4-8': 200000,
+        'claude-sonnet-5': 200000,
+        'claude-opus-5': 200000,
         // Local Ministral models — must match (or be ≤) the Ollama model's num_ctx so the
         // extension trims payloads before Ollama would silently truncate. The 8B demo model
         // has 8192 baked in; the 3B runs at Ollama's default, so keep the same guard.
