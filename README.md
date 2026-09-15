@@ -43,6 +43,12 @@ the Anthropic API) and can suggest and create Qlik charts from the model's respo
 > The production-hardening architecture (implemented across the proxy and extension in v0.5.0):
 > [`docs/security-model.md`](./docs/security-model.md) and
 > [`docs/concurrency-model.md`](./docs/concurrency-model.md).
+> A user guide and architecture summary are also available as PDF, in English
+> ([`docs/Anthropic-AI-Assistant-User-Guide-EN.pdf`](./docs/Anthropic-AI-Assistant-User-Guide-EN.pdf),
+> [`docs/Anthropic-AI-Assistant-Architecture-Summary-EN.pdf`](./docs/Anthropic-AI-Assistant-Architecture-Summary-EN.pdf))
+> and Spanish
+> ([`docs/Guia-de-Usuario-Asistente-IA-Anthropic-ES.pdf`](./docs/Guia-de-Usuario-Asistente-IA-Anthropic-ES.pdf),
+> [`docs/Resumen-de-Arquitectura-Asistente-IA-Anthropic-ES.pdf`](./docs/Resumen-de-Arquitectura-Asistente-IA-Anthropic-ES.pdf)).
 
 ## Description
 
@@ -344,7 +350,7 @@ AnthropicExtension/
 ├── scripts/                 # Dev-only: pre-release-check.ps1
 ├── test/                    # Dev-only: node:test unit suites + AMD test harness
 ├── proxy/                   # The hardened proxy (in-tree; holds the key, authenticates the session)
-├── docs/                    # security-model.md, concurrency-model.md
+├── docs/                    # security-model.md, concurrency-model.md, EN/ES user guide + architecture PDFs
 ├── css/
 │   └── style.css
 ├── html/
