@@ -27,7 +27,7 @@ __pycache__/
 
 # Generated documentation. Only the PDFs under docs/ are versioned; the editable
 # Word sources are regenerated locally via notes/doc_prep/build-docs-es.py and not tracked.
-# (Also ignores any stray root-level docx/pdf builds — docs live only in docs/.)
+# (Also ignores any stray root-level docx/pdf builds; docs live only in docs/.)
 *.docx
 /*.pdf
 
@@ -40,8 +40,11 @@ _ul
 .claude/
 CLAUDE.md
 
-# Hardening specs — local working documents, not shipped in the repo
+# Hardening specs, local working documents, not shipped in the repo
 specs/
 
 # Personal/local-only notes: release checklist, doc-build scripts (not shipped)
 notes/
+
+# Marketing materials (personal working copies, not part of the shipped repo)
+marketing/
