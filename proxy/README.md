@@ -56,14 +56,16 @@ Qlik Sense (browser) → https://localhost:3000/api/ollama    → http://localho
 ### Automated (Windows / PowerShell) — recommended
 
 `scripts/setup.ps1` does the mechanical steps for you (idempotent): checks Node, runs
-`npm ci`, optionally generates + trusts a dev TLS cert, scaffolds `.env` from the template
-with the values you pass, and optionally registers the Windows service. You still supply
-the site secrets (API key, Qlik auth) — the script never invents them.
+`npm ci`, optionally generates a dedicated local dev CA + a proper leaf cert signed by it
+(and trusts the CA), scaffolds `.env` from the template with the values you pass, and
+optionally registers the Windows service. You still supply the site secrets (API key,
+Qlik auth) — the script never invents them.
 
 ```powershell
-# Local dev: deps + trusted self-signed cert + starter .env, then `npm start`.
-pwsh scripts/setup.ps1 -DevCert -TrustCert -ApiKey 'sk-ant-...' `
-  -QlikSessionUrl 'https://your-qlik:4243/qps/session' `
+# Local dev: deps + a CA-signed dev cert (SAN: localhost, 127.0.0.1, and your real
+# hostname) trusted in the current user's store + starter .env, then `npm start`.
+pwsh scripts/setup.ps1 -DevCert -TrustCert -CertHosts 'your-qlik,your-qlik.example.com' `
+  -ApiKey 'sk-ant-...' -QlikSessionUrl 'https://your-qlik:4243/qps/session' `
   -QlikCert './certs/client.pem' -QlikKey './certs/client_key.pem' `
   -Origins 'https://your-qlik' -LogLevel DEBUG
 
@@ -73,7 +75,19 @@ pwsh scripts/setup.ps1 -ApiKey 'sk-ant-...' -QlikSessionUrl '...' `
   -QlikCert '...' -QlikKey '...' -Origins 'https://your-qlik' -LogLevel INFO -InstallService
 ```
 
-Run `Get-Help scripts/setup.ps1 -Full` for every parameter.
+`-CertHosts` is a **comma-separated string** (`'host1,host2'`), not a PowerShell array —
+array-typed parameters don't reliably survive a `pwsh -File` invocation from outside
+PowerShell, so this avoids that trap entirely. Run `Get-Help scripts/setup.ps1 -Full` for
+every parameter.
+
+> **If the service is already installed, re-running this script (or any bare `npm ci`)
+> will break it.** `npm ci --omit=dev` deletes anything not in `package-lock.json` —
+> which includes `node-windows`, deliberately kept out of the lockfile so it never lands
+> on a production node's dependency tree. The service then fails to start (Windows
+> **Error 1067**, "the process terminated unexpectedly"; the wrapper log under
+> `daemon/*.err.log` shows `Cannot find module '...\node-windows\lib\wrapper.js'`). Fix:
+> `npm install --no-save node-windows`, then `Restart-Service <name>` — no need to
+> re-register the service, just restore the missing package.
 
 ### Manual
 
@@ -112,7 +126,14 @@ See `.env.example` for the full annotated list (credentials, auth, concurrency, 
 
 Certificates are **not in the repo** — `certs/*.pem` is git-ignored, since a private key
 doesn't belong in version control and a `localhost` certificate is useless to anyone else.
-The server won't start until you generate your own:
+The server won't start until you generate your own.
+
+**On Windows, `scripts/setup.ps1 -DevCert -TrustCert` (see Setup above) is the
+recommended way to do this** — it generates a dedicated local CA plus a leaf cert signed
+by it, and trusts only the CA, so rotating the leaf or adding a hostname later never
+needs re-trusting. The manual single-command version below produces one self-signed
+leaf trusted directly instead — simpler for a quick one-off, but every rotation needs a
+fresh `certutil` import:
 
 ```bash
 mkdir -p certs
@@ -268,9 +289,21 @@ node service/install-service.js     # run as Administrator; registers + starts "
 node service/uninstall-service.js   # remove the service (standalone `node server.js` still works)
 ```
 
+Set `$env:SERVICE_NAME` before either command to register/remove it under a
+site-specific name instead of the default `cm-llm-proxy` — both scripts read the same
+variable, so use the same value for install and uninstall.
+
 Run the service under a **least-privilege account** that can read the TLS and Qlik certificates.
-`Stop-Service cm-llm-proxy` triggers the graceful drain (in-flight requests finish within
+`Stop-Service <name>` triggers the graceful drain (in-flight requests finish within
 `DRAIN_TIMEOUT_MS`); `Start-Service` comes back ready once boot validation passes.
+
+> **`npm install --no-save node-windows` is not durable.** It's deliberately kept out of
+> `package-lock.json` so it never lands on a production node's runtime dependency tree —
+> but that also means a later `npm ci` (a redeploy, re-running `setup.ps1`, anything that
+> reinstalls from the lockfile) **deletes it**, and the running service then fails with
+> Windows **Error 1067** on its next restart. If that happens: `npm install --no-save
+> node-windows` again, then `Restart-Service <name>` — the service registration itself is
+> untouched, only the wrapper's dependency needs restoring.
 
 **Logs.** With `LOG_DIR` set, the app log (`app.log`) and a separate audit log (`audit.log`) are
 written there as JSON lines with size-based rotation (`LOG_MAX_BYTES` × `LOG_MAX_FILES`); otherwise
@@ -295,6 +328,7 @@ variable is missing or a cert path is unreadable.
 | **Firefox only**: cert trusted in Windows but Firefox still rejects it | Firefox has its own certificate store, separate from Windows — import the cert into Firefox directly, or enable `security.enterprise_roots.enabled` in `about:config` (see Certificates) |
 | CORS rejection | `QLIK_ORIGINS` is compared **exactly**; `https://localhost` will not match a hub served from `https://myserver` |
 | Model keeps generating after the client stops | You're on a pre-2.0.0 proxy — cancel propagation was added in v2.0.0 |
+| Windows service won't (re)start, **Error 1067** | `npm ci` deleted `node-windows` (it's deliberately out of `package-lock.json`) — `npm install --no-save node-windows`, then `Restart-Service <name>`; see Operations |
 
 ## Related repositories
 

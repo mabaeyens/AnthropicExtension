@@ -9,6 +9,11 @@ daemon/
 # Certificates — generated locally, never committed. A private key has no
 # business in a repo, and a localhost cert is useless to anyone else anyway.
 certs/*.pem
+certs/*.srl
+certs/*.csr
+# The dedicated dev CA's private key is more sensitive than the leaf's — it can mint
+# further certs, not just serve TLS for this one process. Never committed.
+certs/ca/
 
 # Environment
 .env

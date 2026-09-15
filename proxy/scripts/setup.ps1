@@ -7,10 +7,13 @@
   Runs, idempotently:
     1. Verify Node.js (>= 18) is on PATH.
     2. npm ci  (install proxy dependencies from the lockfile).
-    3. -DevCert:  generate a self-signed localhost TLS cert into ./certs (if missing),
-                  and with -TrustCert add it to the current user's Root store so the
-                  browser trusts it. (Production uses a CA-signed cert instead — set
-                  TLS_CERT/TLS_KEY in .env; see README "Production certificate".)
+    3. -DevCert:  generate a dedicated local dev CA into ./certs/ca (if missing), then a
+                  proper end-entity leaf cert signed by it into ./certs (CN/SAN from
+                  -CertHosts). With -TrustCert, only the CA is added to the current
+                  user's Root store — not the leaf — so a future leaf rotation (or a
+                  second hostname) never needs re-trusting. (Production uses a CA-signed
+                  cert from your own internal/enterprise CA instead — set TLS_CERT/
+                  TLS_KEY in .env; see README "Production certificate".)
     4. Create/patch .env from .env.example with any values you pass (ANTHROPIC_API_KEY,
        QLIK_SESSION_URL, QLIK_CERT, QLIK_KEY, QLIK_ORIGINS, LOG_LEVEL). Existing values
        are only overwritten for the parameters you provide.
@@ -21,8 +24,9 @@
   session-validation URL + client certificates are yours to provide.
 
 .EXAMPLE
-  # Local dev: deps + trusted self-signed cert + a starter .env, then run by hand.
-  pwsh scripts/setup.ps1 -DevCert -TrustCert -ApiKey 'sk-ant-...' `
+  # Local dev: deps + a trusted dev-CA-signed cert (SAN: localhost, 127.0.0.1, and the
+  # real hostname clients will use) + a starter .env, then run by hand.
+  pwsh scripts/setup.ps1 -DevCert -TrustCert -CertHosts 'spmad-mby1,spmad-mby1.qliktech.com' -ApiKey 'sk-ant-...' `
     -QlikSessionUrl 'https://spmad-mby1:4243/qps/session' `
     -QlikCert './certs/client.pem' -QlikKey './certs/client_key.pem' `
     -Origins 'https://spmad-mby1' -LogLevel DEBUG
@@ -42,6 +46,10 @@ param(
   [ValidateSet('ERROR', 'WARN', 'INFO', 'DEBUG')]
   [string] $LogLevel,
   [switch] $DevCert,
+  # Comma-separated, e.g. 'spmad-mby1,spmad-mby1.qliktech.com' — a string, not an array:
+  # array-typed params don't reliably survive a `pwsh -File` invocation from outside
+  # PowerShell (the comma can arrive as literal text rather than an element separator).
+  [string] $CertHosts = '',
   [switch] $TrustCert,
   [switch] $InstallService,
   [switch] $WithDevDeps
@@ -71,32 +79,68 @@ if (Test-Path 'package-lock.json') { & npm ci @omit } else { & npm install @omit
 if ($LASTEXITCODE -ne 0) { Write-Error 'npm install failed.'; exit 1 }
 Ok 'Dependencies installed'
 
-# 3. Dev TLS certificate (self-signed localhost). Production uses a CA-signed cert.
+# 3. Dev TLS certificate: a dedicated local CA (once), then a proper leaf cert signed by
+# it (every run, if missing). Two tiers so -TrustCert only ever has to trust the CA —
+# rotating the leaf, or adding a second hostname, never needs a re-import.
 if ($DevCert) {
   New-Item -ItemType Directory -Force './certs' | Out-Null
+  New-Item -ItemType Directory -Force './certs/ca' | Out-Null
+  $openssl = Get-Command openssl -ErrorAction SilentlyContinue
+  if (-not $openssl) {
+    Write-Error 'openssl not found. Install it (Git for Windows bundles it) or supply a cert manually — see README "Certificates".'
+    exit 1
+  }
+
+  $caKey  = './certs/ca/proxy-dev-ca-key.pem'
+  $caCert = './certs/ca/proxy-dev-ca-cert.pem'
+  if ((Test-Path $caKey) -and (Test-Path $caCert)) {
+    Info 'Dev CA already present — skipping generation.'
+  } else {
+    Info 'Generating dedicated dev CA (private to this checkout, not Qlik''s own PKI)…'
+    & openssl req -x509 -newkey rsa:2048 -nodes -days 3650 `
+      -keyout $caKey -out $caCert `
+      -subj '/CN=AnthropicExtension Proxy Dev CA' `
+      -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' `
+      -addext 'keyUsage=critical,keyCertSign,cRLSign'
+    if ($LASTEXITCODE -ne 0) { Write-Error 'openssl CA generation failed.'; exit 1 }
+    Ok 'Dev CA generated (certs/ca/) — keep certs/ca/*.pem out of source control, it can mint further certs'
+  }
+
   $certPem = './certs/localhost3000-cert.pem'
   $keyPem  = './certs/localhost3000-key.pem'
   if ((Test-Path $certPem) -and (Test-Path $keyPem)) {
-    Info 'Dev cert already present — skipping generation.'
+    Info 'Leaf cert already present — skipping generation.'
   } else {
-    $openssl = Get-Command openssl -ErrorAction SilentlyContinue
-    if (-not $openssl) {
-      Write-Error 'openssl not found. Install it (Git for Windows bundles it) or supply a cert manually — see README "Certificates".'
-      exit 1
-    }
-    Info 'Generating self-signed localhost cert (SAN: localhost, 127.0.0.1)…'
-    & openssl req -x509 -newkey rsa:2048 -nodes -days 825 `
-      -keyout $keyPem -out $certPem `
-      -subj '/CN=localhost' `
-      -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
-    if ($LASTEXITCODE -ne 0) { Write-Error 'openssl cert generation failed.'; exit 1 }
-    Ok 'Dev cert generated'
+    $extraHosts = if ($CertHosts) { $CertHosts -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } } else { @() }
+    $hosts = @('localhost', '127.0.0.1') + $extraHosts | Select-Object -Unique
+    $san = ($hosts | ForEach-Object {
+      if ($_ -match '^\d{1,3}(\.\d{1,3}){3}$') { "IP:$_" } else { "DNS:$_" }
+    }) -join ','
+    Info "Generating leaf cert signed by the dev CA (SAN: $san)…"
+    $csr = './certs/localhost3000.csr'
+    $extFile = './certs/leaf-ext.cnf'
+    @(
+      'basicConstraints=critical,CA:FALSE'
+      'keyUsage=critical,digitalSignature,keyEncipherment'
+      'extendedKeyUsage=serverAuth'
+      "subjectAltName=$san"
+    ) | Set-Content -Path $extFile -Encoding ascii
+    & openssl req -new -newkey rsa:2048 -nodes -keyout $keyPem -out $csr -subj '/CN=AnthropicExtension Proxy'
+    if ($LASTEXITCODE -ne 0) { Write-Error 'openssl CSR generation failed.'; exit 1 }
+    & openssl x509 -req -in $csr -CA $caCert -CAkey $caKey -CAcreateserial -days 825 -sha256 `
+      -extfile $extFile -out $certPem
+    if ($LASTEXITCODE -ne 0) { Write-Error 'openssl leaf signing failed.'; exit 1 }
+    Remove-Item $csr, $extFile -ErrorAction SilentlyContinue
+    Ok 'Leaf cert generated and signed by the dev CA'
   }
+
   if ($TrustCert) {
-    Info 'Trusting the dev cert in the current user Root store (certutil)…'
-    & certutil -user -addstore Root $certPem | Out-Null
-    if ($LASTEXITCODE -eq 0) { Ok 'Dev cert trusted (restart the browser to pick it up)' }
-    else { Warn 'certutil failed — trust the cert manually (see README).' }
+    Info 'Trusting the dev CA (not the leaf) in the current user Root store (certutil)…'
+    & certutil -user -addstore Root $caCert | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+      Ok 'Dev CA trusted (restart the browser to pick it up)'
+      Warn 'Firefox keeps its own certificate store: import certs/ca/proxy-dev-ca-cert.pem there too, or enable security.enterprise_roots.enabled in about:config — see README "Certificates".'
+    } else { Warn 'certutil failed — trust the CA manually (see README).' }
   }
 }
 
