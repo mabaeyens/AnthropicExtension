@@ -336,9 +336,11 @@ AnthropicExtension/
 ├── README.md                # This file
 ├── CHANGELOG.md             # Release notes
 ├── INSTALL.md               # Deployment / run instructions
+├── TROUBLESHOOTING.md       # Console snippets and checks for common issues
 ├── diagrams.md              # Data-flow & sequence diagrams (Mermaid)
 ├── icon.png
 ├── package.json             # Dev-only: ESLint + node:test (NOT shipped; runtime stays AMD)
+├── package.ps1              # Dev-only: builds the release zip
 ├── scripts/                 # Dev-only: pre-release-check.ps1
 ├── test/                    # Dev-only: node:test unit suites + AMD test harness
 ├── proxy/                   # The hardened proxy (in-tree; holds the key, authenticates the session)
