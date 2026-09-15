@@ -21,7 +21,9 @@ try {
 }
 
 const svc = new Service({
-  name: 'cm-llm-proxy',
+  // Overridable so a node can register the service under a site-specific name;
+  // uninstall-service.js must be given the same SERVICE_NAME to find it again.
+  name: process.env.SERVICE_NAME || 'cm-llm-proxy',
   description: 'Qlik Sense → Anthropic/Ollama hardened LLM proxy',
   script: path.join(__dirname, '..', 'server.js'),
   // Auto-restart with backoff on crash.

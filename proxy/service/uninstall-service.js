@@ -17,7 +17,8 @@ try {
 }
 
 const svc = new Service({
-  name: 'cm-llm-proxy',
+  // Must match the SERVICE_NAME the service was installed under.
+  name: process.env.SERVICE_NAME || 'cm-llm-proxy',
   script: path.join(__dirname, '..', 'server.js'),
 });
 

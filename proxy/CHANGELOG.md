@@ -4,6 +4,23 @@ All notable changes to the proxy are documented here. The proxy is versioned and
 **independently** of the extension: its tags are `proxy-vX.Y.Z` (the extension uses `vX.Y.Z`).
 The two live in one monorepo but ship on their own cadence.
 
+## [2.0.1] - 2026-09-15
+
+### Fixed
+
+- **Default Anthropic model allowlist updated to the current Claude generation.**
+  `ALLOWED_ANTHROPIC_MODELS` default (`lib/model-allowlist.js`, `.env.example`) changed
+  from `claude-haiku-4-5,claude-sonnet-4-6,claude-opus-4-8` to
+  `claude-haiku-4-5,claude-sonnet-5,claude-opus-5`, matching the extension's updated
+  registry. A deployment with `ALLOWED_ANTHROPIC_MODELS` explicitly set in its own `.env`
+  must update that value too, or the proxy will `403` the new IDs.
+
+### Added
+
+- **`SERVICE_NAME` env var** for `service/install-service.js` / `uninstall-service.js`,
+  so an operator can register the Windows service under a site-specific name instead of
+  the hardcoded `cm-llm-proxy`. Default behavior is unchanged when unset.
+
 ## [2.0.0] - 2026-07-26
 
 Production-hardening release. Turns the demo-grade `cm-llm-proxy` into a hardened gateway that
