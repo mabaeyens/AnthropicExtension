@@ -127,6 +127,19 @@ NetworkError. Visit `https://<proxy-host>:3000/health` in the same browser and a
 warning (Firefox: **Advanced… → Accept the Risk and Continue**). Exceptions are per origin:
 `localhost:3000` and `myhost:3000` each need their own.
 
+> If the proxy shares a **hostname** with the Qlik hub (e.g. both reached as `myhost`, just
+> a different port), you won't get a click-through warning at all — Chrome/Edge instead
+> refuse outright with *"You cannot visit `myhost` right now because the website uses
+> HSTS."* This happens because the Qlik hub (port 443) already sent a
+> `Strict-Transport-Security` header for that bare hostname, and HSTS is enforced per
+> hostname regardless of port, with no bypass. The only fix is to actually trust the cert
+> in the OS store first (`proxy/README.md` → Certificates), not click through it:
+> ```powershell
+> certutil -user -addstore Root proxy\certs\localhost3000-cert.pem
+> ```
+> then fully close and reopen the browser (not just the tab — HSTS/cert state is cached
+> per process).
+
 **You used `localhost` from a remote browser.** `https://localhost:3000` resolves to the
 *browser's* machine. Use the proxy host's name.
 

@@ -133,7 +133,19 @@ Chrome and Edge read the OS store:
 certutil -user -addstore Root certs\localhost3000-cert.pem
 ```
 
-Restart the browser afterwards. To remove it later, use `certutil -user -delstore Root <thumbprint>`.
+Restart the browser afterwards — close every window, not just the tab; the cert/HSTS state
+is cached at the process level. To remove it later, use
+`certutil -user -delstore Root <thumbprint>`.
+
+> **If the proxy shares a hostname with the Qlik hub** (e.g. both are reached as
+> `spmad-mby1`, just on different ports), an untrusted proxy cert shows up as an **HSTS**
+> error instead of the usual "Your connection isn't private → Proceed anyway": *"You
+> cannot visit `<host>` right now because the website uses HSTS."*, with no click-through
+> link at all. This happens because the Qlik hub (port 443) already sent a
+> `Strict-Transport-Security` header for that bare hostname, and the browser then refuses
+> *any* untrusted cert on *any* port of that same host, HSTS-pinned host regardless of
+> which service actually issued the header. The fix is the same — trust the cert above —
+> but there's no way to bypass it temporarily to check; it's trust-it-or-nothing.
 
 ### Production certificate (issuance & rotation)
 
@@ -145,6 +157,29 @@ Qlik page trusts it without a manual store import:
 - Issue the cert against the FQDN clients use; set `TLS_CERT` / `TLS_KEY` to its paths
   (keep them off the repo — `certs/*.pem` stays git-ignored). `TLS_MIN_VERSION` defaults
   to `TLSv1.2`; set `TLSv1.3` where the client fleet supports it.
+- **Reusing Qlik's own internal CA (the one behind `QLIK_CERT`/`root.pem`), instead of
+  the self-signed pair above, is worth doing if that CA is already trusted on the
+  machines that will open the extension** — check first: `Get-ChildItem
+  Cert:\LocalMachine\Root | Where-Object Subject -like '*<your CA CN>*'` on a client
+  machine, or ask whoever manages the Qlik deployment whether it's pushed via GPO/SCCM.
+  If it is, a leaf cert chained to it is trusted automatically, no manual `certutil`
+  import anywhere.
+  - **Never reuse `client.pem` (the QlikClient cert) itself as the proxy's TLS
+    certificate.** It's a *client*-authentication credential the proxy presents *to*
+    QPS, with `CN=QlikClient` — it doesn't carry the proxy's own hostname, so browsers
+    will reject it on a Subject/SAN mismatch even if the chain is trusted, and reusing
+    one credential for two different trust purposes is bad practice regardless.
+  - Instead, request a **new leaf certificate from that same CA**, with `Server
+    Authentication` EKU and the proxy's actual hostname(s) as SANs. On QSEoW, Qlik
+    itself is usually the one holding that CA's signing key (as part of its own internal
+    PKI) — check with your Qlik admin how new server certs get issued from it (e.g. via
+    QMC's certificate export, or however your org already mints QSEoW node-to-node
+    certs); this isn't something to do by hand with a discovered private key.
+  - **This doesn't require the proxy to run on an actual Qlik Sense node.** Any machine
+    can hold a leaf cert issued by that CA. What matters is (a) the cert's SAN matches
+    whatever hostname clients will actually use to reach the proxy, wherever it runs, and
+    (b) that CA is trusted on those clients' machines — which, unlike the self-signed
+    path, only needs solving once per CA rather than once per proxy hostname.
 - **Rotation:** re-issue before expiry, drop the new pair in place, and restart the
   Windows service (P06) — clients reconnect automatically. Overlap validity windows so a
   renewal never leaves a gap. Rotation is a config/file change, not a code change.
@@ -235,6 +270,7 @@ variable is missing or a cert path is unreadable.
 | `413` / validation rejection | Body exceeds the size cap or fails the route's schema |
 | `503` with `Retry-After` | The concurrency queue is full or the request timed out waiting; also returned by `/ready` during graceful drain |
 | Browser shows a status-less XHR failure | The proxy's TLS certificate isn't trusted — see Certificates |
+| Browser refuses to load with an **HSTS** error and no click-through option | The proxy shares a hostname with something that already sent `Strict-Transport-Security` (typically the Qlik hub itself, on 443) — trust the cert (see Certificates); there's no bypass |
 | CORS rejection | `QLIK_ORIGINS` is compared **exactly**; `https://localhost` will not match a hub served from `https://myserver` |
 | Model keeps generating after the client stops | You're on a pre-2.0.0 proxy — cancel propagation was added in v2.0.0 |
 
