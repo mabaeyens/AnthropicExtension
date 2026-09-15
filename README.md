@@ -260,9 +260,11 @@ Qlik (HTTPS) → https://localhost:3000/api/ollama  (proxy v2.0.0) → http://lo
    URL(s) you open the hub with, CORS compares them exactly, so `https://localhost` will reject a hub
    served from `https://myserver`.
 3. **Trust the proxy's certificate.** Without it the browser blocks the extension's request as a
-   status-less XHR failure, not a warning you can click through. On Windows, Chrome and Edge read
-   the OS store: `certutil -user -addstore Root certs\localhost3000-cert.pem`, then restart the
-   browser.
+   status-less XHR failure, not a warning you can click through. The recommended way is
+   `proxy/scripts/setup.ps1 -DevCert -TrustCert`, which generates a dedicated local dev CA, signs a
+   leaf certificate with it, and trusts only the CA, so a later rotation or a new hostname never
+   needs re-trusting. See [`proxy/README.md`](./proxy/README.md#certificates) for the manual
+   `certutil` alternative and the Firefox-specific step.
 4. Set **Local model URL** = `https://localhost:3000/api/ollama` in the extension properties, and
    pick a Ministral model with **Pick model** in the chat panel.
 
