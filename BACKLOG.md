@@ -10,10 +10,10 @@
 - [2026-09-18] Deleted `js/prompt-store.js` — untracked, unreferenced by any other file, not in the built zip; dead WIP code for `specs/02-custom-prompt-feature.md`.
 - [2026-09-18] Added `.obsidian/` and `linkedin-post-2026-09-18.md` to `.gitignore` — both are personal/stray files that don't belong in this repo.
 - [2026-09-18] Fresh independent public-readiness re-audit: 7/9. No secrets in history or tree, CI green (52/52 tests), versions consistent everywhere. Confirmed the repo is still private on GitHub.
+- [2026-09-18] Added `CONTRIBUTING.md` (style matched to mira-apps' — prerequisites, workflow, PR checklist), linked from README's Contributing section.
 
 ## Pending
 - Flip the GitHub repo to public — everything else was prep, this is the actual step, not yet taken.
-- No `CONTRIBUTING.md`. Not a blocker, but CI workflows already imply outside contributions are expected — a short one (CHANGELOG conventions, PR checklist) would round out the public-facing docs.
 - `specs/03-rag-support.md` — new spec, not implemented: RAG over a local document folder via mira-core, so chart analysis can be checked against a reference/policy doc.
 
 ## Notes

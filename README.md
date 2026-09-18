@@ -419,7 +419,8 @@ This project is licensed under the **MIT License**. You can find the full text i
 
 ## 🚀 Contributing
 
-Feel free to fork this project!
+Feel free to fork this project! See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites,
+workflow, and what to check before opening a pull request.
 - If you find a bug, open an issue.
 - If you have an improvement, submit a Pull Request.
 - Feel free to use this code in your own projects!
