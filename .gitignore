@@ -48,3 +48,7 @@ notes/
 
 # Marketing materials (personal working copies, not part of the shipped repo)
 marketing/
+
+# Stray personal/local files that don't belong to this project
+.obsidian/
+linkedin-post-2026-09-18.md

@@ -6,11 +6,14 @@
 - [2026-09-18] Verified the extension builds and tests cleanly on this Mac: `npm ci`, `npm run lint` (clean), `npm test` (52/52 passing), and `pwsh package.ps1` (produces a valid 19-file `AnthropicExtension-v0.5.5.zip`).
 - [2026-09-18] Fixed architecture drift in `CLAUDE.md` (local-only, gitignored): removed the stale `js/security.js` reference and documented `js/config-validate.js` / `js/log.js`, which exist but weren't listed.
 - [2026-09-18] Synced local Mac clone with origin (pulled 15 commits: v0.5.5/build 45, ESLint 8→10, dependency bumps, doc cleanup).
+- [2026-09-18] Rewrote `docs/project-overview.md` and `docs/data-flow.md` from scratch against the current proxy-only architecture (no client-side API key, no `js/security.js`) — the expected "import from the other machine" never materialized since that machine's copy doesn't have these files at all. Committed.
+- [2026-09-18] Deleted `js/prompt-store.js` — untracked, unreferenced by any other file, not in the built zip; dead WIP code for `specs/02-custom-prompt-feature.md`.
+- [2026-09-18] Added `.obsidian/` and `linkedin-post-2026-09-18.md` to `.gitignore` — both are personal/stray files that don't belong in this repo.
+- [2026-09-18] Fresh independent public-readiness re-audit: 7/9. No secrets in history or tree, CI green (52/52 tests), versions consistent everywhere. Confirmed the repo is still private on GitHub.
 
 ## Pending
-- Import updated `docs/project-overview.md` and `docs/data-flow.md` from the other machine. The current untracked copies still describe the pre-hardening architecture (client-side API key, `js/security.js`, `cm-llm-proxy` as an external repo) and must not be committed as-is.
-- `js/prompt-store.js` (untracked) — WIP implementation of the multi-chart + prompt-template feature (`specs/02-custom-prompt-feature.md`); not yet wired into `ui-controller.js`, not committed.
-- Decide whether to add `.obsidian/` and `linkedin-post-*.md` to `.gitignore` before publishing — both are currently untracked but unignored, so a careless `git add -A` could sweep them into the public repo. Offered, not yet confirmed.
+- Flip the GitHub repo to public — everything else was prep, this is the actual step, not yet taken.
+- No `CONTRIBUTING.md`. Not a blocker, but CI workflows already imply outside contributions are expected — a short one (CHANGELOG conventions, PR checklist) would round out the public-facing docs.
 - `specs/03-rag-support.md` — new spec, not implemented: RAG over a local document folder via mira-core, so chart analysis can be checked against a reference/policy doc.
 
 ## Notes
