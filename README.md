@@ -134,20 +134,25 @@ The proxy ships separately as **[proxy-v2.0.2](https://github.com/mabaeyens/Anth
 
 ## Installation
 
-You can either use the packaged release zip or copy the repository folder directly.
+**The proxy must be deployed first.** The extension cannot answer anything without it, there is no
+direct-browser fallback, so install it before touching the zip.
 
-1. Get the extension into the Qlik Sense extensions directory:
+1. **Deploy the proxy.** Follow [Proxy (required)](#proxy-required) below, or go straight to
+   [`proxy/README.md`](./proxy/README.md) for full setup. The quick path is
+   `proxy/scripts/setup.ps1`, which automates the Node check, deps, dev cert, `.env`, and the
+   Windows service. Confirm it's reachable (`/health`) before moving on.
+2. **Then install the extension** into Qlik Sense, either the packaged release zip or this repo
+   folder directly:
    - **Enterprise (QSEoW)**: in the QMC → **Extensions → Import**, upload
      `AnthropicExtension-v0.5.5.zip`.
    - **Desktop**: unzip the release into
      `%USERPROFILE%\Documents\Qlik\Sense\Extensions\AnthropicExtension\` (or copy this repo
      folder there).
-2. Reload Qlik Sense
-3. The extension will appear in the assets panel as **"Anthropic AI Assistant"**
-
-> **The proxy must be deployed first.** Deploy [`proxy/`](./proxy) (its `scripts/setup.ps1` automates
-> Node check, deps, dev cert, `.env`, and the Windows service), then set the **Proxy URL** in the
-> extension properties. Without a reachable, authenticated proxy the assistant cannot answer.
+3. **Reload Qlik Sense.** The extension appears in the assets panel as **"Anthropic AI Assistant"**.
+4. **Point it at the proxy.** Drag the extension onto a sheet and set the **Proxy URL** (and
+   **Local model URL**, if using local models) in its properties, see
+   [Configuration](#configuration). Without a reachable, authenticated proxy the assistant cannot
+   answer.
 
 ## Configuration
 
