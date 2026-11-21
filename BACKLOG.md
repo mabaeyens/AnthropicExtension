@@ -1,6 +1,7 @@
 # Backlog
 
 ## Done
+- [2026-11-21] Moved the model registry to the 5.5 generation: `claude-haiku-5-5` (new default), `claude-sonnet-5-5`, `claude-opus-5-5` in `API.MODELS`, `API.CONTEXT_WINDOWS` and the proxy's default `ALLOWED_ANTHROPIC_MODELS`. Extension tests 52/52, proxy 101/102 (the failure is `test/load-test.js`, which fails without my change too).
 - [2026-09-18] Public-readiness audit before making the repo public: confirmed no real secrets anywhere in the current tree or the full git history (checked `git log --all -p` for key/token patterns), and that LICENSE, `.gitignore`, CI workflows, `package.json`, and `.qext` metadata are all clean.
 - [2026-09-18] Rewrote `SECURITY.md` to drop the stale client-side "API key AES-encrypted in localStorage" description and point to `docs/security-model.md` (the accurate, authoritative source) instead of duplicating it.
 - [2026-09-18] Verified the extension builds and tests cleanly on this Mac: `npm ci`, `npm run lint` (clean), `npm test` (52/52 passing), and `pwsh package.ps1` (produces a valid 19-file `AnthropicExtension-v0.5.5.zip`).
@@ -13,6 +14,11 @@
 - [2026-09-18] Added `CONTRIBUTING.md` (style matched to mira-apps' — prerequisites, workflow, PR checklist), linked from README's Contributing section.
 
 ## Pending
+- Update `proxy/.env.example` line 77 (the commented `ALLOWED_ANTHROPIC_MODELS` example) to `claude-haiku-5-5,claude-sonnet-5-5,claude-opus-5-5`; it still lists the old IDs.
+- On the Windows laptop: `git pull origin main`, and add the new IDs to the proxy `.env` if `ALLOWED_ANTHROPIC_MODELS` is set explicitly there, or the proxy refuses them.
+- Live-test Haiku 5.5 on a chart question: it thinks adaptively by default and `API.MAX_TOKENS` is 4000, so check answers are not truncated.
+- Decide whether to raise `API.CONTEXT_WINDOWS` from 200000 to 1M for the 5.5 models (left unchanged on purpose).
+- `proxy/test/load-test.js` is a script that `node --test` picks up and fails; exclude it from the test glob or move it.
 - Flip the GitHub repo to public — everything else was prep, this is the actual step, not yet taken.
 - `specs/03-rag-support.md` — new spec, not implemented: RAG over a local document folder via mira-core, so chart analysis can be checked against a reference/policy doc.
 
