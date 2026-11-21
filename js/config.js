@@ -60,20 +60,20 @@ define([], function() {
       // corrected at read time for a backend that is switched off. Nothing else writes
       // them, so an unreachable backend can never silently rewrite the user's choice —
       // which is precisely what a self-correcting, self-persisting active model did.
-      MODEL_DEFAULT: 'claude-haiku-4-5',
+      MODEL_DEFAULT: 'claude-haiku-5-5',
       MODEL_PICK: null,
       // The shipped default, frozen. MODEL_DEFAULT is overwritten at runtime (property,
       // restored session state), so the properties-panel dropdown must not use it as its
       // defaultValue — a NEW object would then inherit whatever the last session left
       // behind instead of a stable, documented default.
-      MODEL_SHIPPED_DEFAULT: 'claude-haiku-4-5',
+      MODEL_SHIPPED_DEFAULT: 'claude-haiku-5-5',
       // The model registry — drives BOTH the properties-panel dropdown and the
       // in-panel picker. Entries with local:true are served by Ollama (OpenAI
       // chat-completions format, no API key); `tag` is the Ollama model name.
       MODELS: [
-        { id: 'claude-haiku-4-5',   label: 'Haiku 4.5',        hint: 'fast, low cost' },
-        { id: 'claude-sonnet-5',    label: 'Sonnet 5',         hint: 'balanced' },
-        { id: 'claude-opus-5',      label: 'Opus 5',           hint: 'most capable' },
+        { id: 'claude-haiku-5-5',   label: 'Haiku 5.5',        hint: 'fast, low cost' },
+        { id: 'claude-sonnet-5-5',  label: 'Sonnet 5.5',       hint: 'balanced' },
+        { id: 'claude-opus-5-5',    label: 'Opus 5.5',         hint: 'most capable' },
         { id: 'ministral-local',    label: 'Ministral 3 8B',   hint: 'local, via Ollama',
           local: true, tag: 'ministral-3-demo' },
         // Derived from ministral-3:3b with num_ctx 8192 — Ollama's 64k default
@@ -112,9 +112,9 @@ define([], function() {
       // request would exceed the selected model's limit. Per-model with a fallback.
       CONTEXT_WINDOW: 200000,
       CONTEXT_WINDOWS: {
-        'claude-haiku-4-5': 200000,
-        'claude-sonnet-5': 200000,
-        'claude-opus-5': 200000,
+        'claude-haiku-5-5': 200000,
+        'claude-sonnet-5-5': 200000,
+        'claude-opus-5-5': 200000,
         // Local Ministral models — must match (or be ≤) the Ollama model's num_ctx so the
         // extension trims payloads before Ollama would silently truncate. The 8B demo model
         // has 8192 baked in; the 3B runs at Ollama's default, so keep the same guard.

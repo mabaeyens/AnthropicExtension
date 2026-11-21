@@ -14,9 +14,9 @@ function load(cfgOverrides) {
       PROXY_URL: 'https://host:3000/api/anthropic',
       LOCAL: { URL: 'https://host:3000/api/ollama' },
       MAX_TOKENS: 4000,
-      MODEL_DEFAULT: 'claude-haiku-4-5',
+      MODEL_DEFAULT: 'claude-haiku-5-5',
       MODELS: [
-        { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
+        { id: 'claude-haiku-5-5', label: 'Haiku 5.5' },
         { id: 'ministral-local', label: 'Ministral', local: true, tag: 'ministral-3-demo' }
       ]
     },

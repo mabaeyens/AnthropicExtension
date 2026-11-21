@@ -59,7 +59,7 @@ require(['qlik'], function (q) {
 ```
 
 **Reading the output:** one line per object, naming the sheet and the object ID. An object
-whose settings print as `{"model":"claude-haiku-4-5"}`, with no `proxyUrl` and no `localUrl`, is
+whose settings print as `{"model":"claude-haiku-5-5"}`, with no `proxyUrl` and no `localUrl`, is
 an unconfigured stray. Delete it, or configure it identically to the real one.
 
 **To delete it:** open the named sheet, enter **Edit sheet**, select the AI Assistant

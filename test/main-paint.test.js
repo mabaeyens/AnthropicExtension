@@ -70,18 +70,18 @@ test('an in-panel pick overrides the property and survives repaints', async () =
   const { config, paint, active } = setup();
   await paint('ministral-local-3b', { localUrl: OLLAMA, proxyUrl: ANTHROPIC });
 
-  config.API.MODEL_PICK = 'claude-opus-5';        // what applyModelChange() does
-  assert.equal(active(), 'claude-opus-5');
+  config.API.MODEL_PICK = 'claude-opus-5-5';        // what applyModelChange() does
+  assert.equal(active(), 'claude-opus-5-5');
 
   // Qlik repaints on every selection event, property unchanged — must not revert.
   await paint('ministral-local-3b', { localUrl: OLLAMA, proxyUrl: ANTHROPIC });
-  assert.equal(active(), 'claude-opus-5');
+  assert.equal(active(), 'claude-opus-5-5');
 });
 
 test('editing the property overrides an in-panel pick', async () => {
   const { config, paint, active } = setup();
-  await paint('claude-haiku-4-5', { proxyUrl: ANTHROPIC, localUrl: OLLAMA });
-  config.API.MODEL_PICK = 'claude-opus-5';
+  await paint('claude-haiku-5-5', { proxyUrl: ANTHROPIC, localUrl: OLLAMA });
+  config.API.MODEL_PICK = 'claude-opus-5-5';
 
   await paint('ministral-local-3b', { proxyUrl: ANTHROPIC, localUrl: OLLAMA });
   assert.equal(config.API.MODEL_PICK, null, 'a property edit clears the pick');
@@ -97,27 +97,27 @@ test('a blank Proxy URL withholds the Claude models', async () => {
   // reference-equal to this realm's Array.prototype.
   const ids = anthropicAPI.availableModels().map((m) => m.id).join(',');
   assert.equal(ids, 'ministral-local,ministral-local-3b');
-  assert.equal(anthropicAPI.isModelAvailable('claude-haiku-4-5'), false);
+  assert.equal(anthropicAPI.isModelAvailable('claude-haiku-5-5'), false);
 });
 
 test('an unavailable model is substituted for display, NOT overwritten', async () => {
   const { config, paint, active } = setup();
   await paint('ministral-local-3b', { proxyUrl: '', localUrl: OLLAMA });
-  config.API.MODEL_PICK = 'claude-opus-5';   // picked while the proxy was still set
+  config.API.MODEL_PICK = 'claude-opus-5-5';   // picked while the proxy was still set
 
   // Claude is off, so something reachable is shown instead...
-  assert.notEqual(active(), 'claude-opus-5');
+  assert.notEqual(active(), 'claude-opus-5-5');
   // ...but the recorded choice is untouched, and returns the moment the proxy is back.
-  assert.equal(config.API.MODEL_PICK, 'claude-opus-5');
+  assert.equal(config.API.MODEL_PICK, 'claude-opus-5-5');
   await paint('ministral-local-3b', { proxyUrl: ANTHROPIC, localUrl: OLLAMA });
-  assert.equal(active(), 'claude-opus-5');
+  assert.equal(active(), 'claude-opus-5-5');
 });
 
 test('an unreachable pick falls back to the property, not to registry order', async () => {
   const { config, paint, active } = setup();
   // The object is configured for the 3B; a pick made earlier points at unreachable Claude.
   await paint('ministral-local-3b', { proxyUrl: '', localUrl: OLLAMA });
-  config.API.MODEL_PICK = 'claude-opus-5';
+  config.API.MODEL_PICK = 'claude-opus-5-5';
   assert.equal(active(), 'ministral-local-3b',
     'the operator’s 3B — NOT Ministral 3 8B, which merely sorts first in the registry');
 
@@ -127,14 +127,14 @@ test('an unreachable pick falls back to the property, not to registry order', as
 
 test('registry order decides only when the property is unreachable too', async () => {
   const { config, paint, active } = setup();
-  await paint('claude-haiku-4-5', { proxyUrl: '', localUrl: OLLAMA });
-  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5');
+  await paint('claude-haiku-5-5', { proxyUrl: '', localUrl: OLLAMA });
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-5-5');
   assert.equal(active(), 'ministral-local', 'nothing configured is reachable — first available');
 });
 
 test('with nothing configured the full registry is still offered', async () => {
   const { anthropicAPI, paint } = setup();
-  await paint('claude-haiku-4-5', { proxyUrl: '', localUrl: '' });
+  await paint('claude-haiku-5-5', { proxyUrl: '', localUrl: '' });
   assert.equal(anthropicAPI.availableModels().length, 5,
     'fail-safe: an empty picker would leave a fresh install with no way forward');
 });
@@ -142,9 +142,9 @@ test('with nothing configured the full registry is still offered', async () => {
 // ── Config ownership ────────────────────────────────────────────────────────────────
 // `config` is one singleton shared by EVERY object of this extension, while the
 // properties are per object. Without a gate, painting a second, never-configured object
-// (its dropdown default committed as props.model = 'claude-haiku-4-5', no URL keys)
+// (its dropdown default committed as props.model = 'claude-haiku-5-5', no URL keys)
 // overwrote the configured model — the sheet-change bug the user hit: def flipped to
-// 'claude-haiku-4-5' and, with a blank Proxy URL, resolved to Ministral 3 8B.
+// 'claude-haiku-5-5' and, with a blank Proxy URL, resolved to Ministral 3 8B.
 
 // Like setup(), but exposes `main` so several objects (distinct qIds) can paint through
 // the one shared config, and records what renderConfigStatus was last given.
@@ -194,7 +194,7 @@ test('a second, unconfigured object cannot overwrite the configured one', async 
 
   // Navigating to a sheet holding an untouched second object: its dropdown default is
   // committed, and it carries no URL keys at all.
-  await paintObj(main, 'STRAY', { model: 'claude-haiku-4-5' });
+  await paintObj(main, 'STRAY', { model: 'claude-haiku-5-5' });
 
   assert.equal(config.API.MODEL_DEFAULT, 'ministral-local-3b', 'the stray must be ignored');
   assert.equal(active(), 'ministral-local-3b', 'and Ministral 3 8B must not appear');
@@ -205,8 +205,8 @@ test('a configured object takes ownership from an unconfigured incumbent', async
   const { config, main, active } = setupOwnership();
 
   // The unconfigured object paints first (its sheet is the landing sheet).
-  await paintObj(main, 'STRAY', { model: 'claude-haiku-4-5' });
-  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5');
+  await paintObj(main, 'STRAY', { model: 'claude-haiku-5-5' });
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-5-5');
 
   // The real object then paints and must win — first-painted must not be decisive.
   await paintObj(main, 'CONFIGURED', {
@@ -215,7 +215,7 @@ test('a configured object takes ownership from an unconfigured incumbent', async
   assert.equal(active(), 'ministral-local-3b');
 
   // ...and keeps winning on every later visit to the stray's sheet.
-  await paintObj(main, 'STRAY', { model: 'claude-haiku-4-5' });
+  await paintObj(main, 'STRAY', { model: 'claude-haiku-5-5' });
   assert.equal(active(), 'ministral-local-3b');
 });
 

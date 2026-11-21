@@ -11,7 +11,7 @@ const { modelAllowlist } = require('../lib/model-allowlist');
 const { validateBody } = require('../middleware/validate');
 
 const validBody = {
-  model: 'claude-haiku-4-5',
+  model: 'claude-haiku-5-5',
   messages: [{ role: 'user', content: 'hi' }],
   max_tokens: 1024,
   stream: false,
@@ -34,8 +34,8 @@ test('unknown top-level keys are rejected', () => {
 });
 
 test('missing / empty messages is rejected', () => {
-  assert.ok(validateChatBody({ model: 'claude-haiku-4-5' }).some((e) => e.includes('messages')));
-  assert.ok(validateChatBody({ model: 'claude-haiku-4-5', messages: [] }).some((e) => e.includes('messages')));
+  assert.ok(validateChatBody({ model: 'claude-haiku-5-5' }).some((e) => e.includes('messages')));
+  assert.ok(validateChatBody({ model: 'claude-haiku-5-5', messages: [] }).some((e) => e.includes('messages')));
 });
 
 test('a message missing role / content is rejected', () => {
@@ -66,11 +66,11 @@ test('stream must be boolean; system must be string', () => {
 // ── allowlist ───────────────────────────────────────────────────────────────
 test('default allowlist contains the shipped models, env overrides it', () => {
   const def = modelAllowlist({});
-  assert.ok(def.anthropic.has('claude-haiku-4-5'));
+  assert.ok(def.anthropic.has('claude-haiku-5-5'));
   assert.ok(def.ollama.has('ministral-3b-demo'));
   const over = modelAllowlist({ ALLOWED_ANTHROPIC_MODELS: 'only-this' });
   assert.ok(over.anthropic.has('only-this'));
-  assert.ok(!over.anthropic.has('claude-haiku-4-5'));
+  assert.ok(!over.anthropic.has('claude-haiku-5-5'));
 });
 
 // ── validate middleware ───────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ test('schema violation → 400, no next, body not echoed', () => {
   const mw = validateBody('anthropic', { allowlist, maxTokensCap: 8192 });
   const res = fakeRes();
   let nexted = false;
-  mw({ body: { model: 'claude-haiku-4-5', messages: [], secret: 'leak' } }, res, () => { nexted = true; });
+  mw({ body: { model: 'claude-haiku-5-5', messages: [], secret: 'leak' } }, res, () => { nexted = true; });
   assert.equal(nexted, false);
   assert.equal(res.statusCode, 400);
   assert.ok(res.body.requestId);

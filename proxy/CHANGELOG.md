@@ -4,6 +4,15 @@ All notable changes to the proxy are documented here. The proxy is versioned and
 **independently** of the extension: its tags are `proxy-vX.Y.Z` (the extension uses `vX.Y.Z`).
 The two live in one monorepo but ship on their own cadence.
 
+## [Unreleased]
+
+### Changed
+
+- `ALLOWED_ANTHROPIC_MODELS` default (`lib/model-allowlist.js`) changed from
+  `claude-haiku-4-5,claude-sonnet-5,claude-opus-5` to `claude-haiku-5-5,claude-sonnet-5-5,claude-opus-5-5`,
+  matching the extension's updated registry. A deployment with `ALLOWED_ANTHROPIC_MODELS` set explicitly
+  in its own `.env` keeps its list and must add the new IDs, otherwise requests for them are refused.
+
 ## [2.0.2] - 2026-09-15
 
 ### Fixed, TLS dev certificate now correctly constrained (security-relevant)

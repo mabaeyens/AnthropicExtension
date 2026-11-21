@@ -113,7 +113,7 @@ User question: <the user's typed text>
 - **Hosted (Anthropic) models** — Messages API shape, `system` as a top-level field:
   ```json
   {
-    "model": "claude-haiku-4-5",
+    "model": "claude-haiku-5-5",
     "max_tokens": 4000,
     "system": "<system prompt>",
     "messages": [ ...history, { "role": "user", "content": "<assembled text>" } ]

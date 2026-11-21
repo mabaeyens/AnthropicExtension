@@ -28,7 +28,7 @@ test('the property default, the pick and both endpoints survive into a fresh ins
   const storage = fakeStorage();
 
   const first = freshConfig(storage);
-  assert.equal(first.API.MODEL_DEFAULT, 'claude-haiku-4-5', 'shipped default');
+  assert.equal(first.API.MODEL_DEFAULT, 'claude-haiku-5-5', 'shipped default');
   first.API.MODEL_DEFAULT = 'ministral-local-3b';
   first.API.MODEL_PICK = 'ministral-local';
   first.API.LOCAL.URL = OLLAMA;
@@ -62,7 +62,7 @@ test('state written by an older build is discarded, not reinterpreted', () => {
     'anthropicExtension.model': JSON.stringify({ v: 2, model: 'claude-opus-4-8', locked: true }),
   });
   const config = freshConfig(storage);
-  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5', 'ignored — back to the shipped default');
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-5-5', 'ignored — back to the shipped default');
   assert.equal(config.API.MODEL_PICK, null);
   assert.equal(storage.getItem('anthropicExtension.model'), null, 'and the entry is cleared');
 });
@@ -74,13 +74,13 @@ test('ids no longer in the registry are dropped', () => {
     }),
   });
   const config = freshConfig(storage);
-  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5');
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-5-5');
   assert.equal(config.API.MODEL_PICK, null);
 });
 
 test('corrupt stored state does not break module load', () => {
   const config = freshConfig(fakeStorage({ 'anthropicExtension.model': '{not json' }));
-  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-4-5');
+  assert.equal(config.API.MODEL_DEFAULT, 'claude-haiku-5-5');
 });
 
 test('with no window (Node/tests) save and restore are inert no-ops', () => {

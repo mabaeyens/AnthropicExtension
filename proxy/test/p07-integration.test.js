@@ -64,7 +64,7 @@ test('400 on a malformed body (empty messages, unknown key)', async () => {
   const { app } = buildApp();
   const s = await listen(app);
   try {
-    const r = await fetch(`${s.url}/api/anthropic`, { method: 'POST', headers: good(), body: JSON.stringify({ model: 'claude-haiku-4-5', messages: [], evil: 1 }) });
+    const r = await fetch(`${s.url}/api/anthropic`, { method: 'POST', headers: good(), body: JSON.stringify({ model: 'claude-haiku-5-5', messages: [], evil: 1 }) });
     assert.equal(r.status, 400);
     const body = await r.json();
     assert.equal(JSON.stringify(body).includes('evil'), false); // body not echoed

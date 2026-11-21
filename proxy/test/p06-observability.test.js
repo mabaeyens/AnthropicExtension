@@ -141,11 +141,11 @@ test('config.load rejects an unreadable cert path', () => {
 test('audit records user/route/model/status and never a body', () => {
   const lines = [];
   const audit = createAudit({ sink: (l) => lines.push(l), now: () => 'T' });
-  audit.record({ user: 'DIR\\u', route: '/api/anthropic', model: 'claude-haiku-4-5', status: 200, requestId: 'r1' });
+  audit.record({ user: 'DIR\\u', route: '/api/anthropic', model: 'claude-haiku-5-5', status: 200, requestId: 'r1' });
   const rec = JSON.parse(lines[0]);
   assert.equal(rec.kind, 'audit');
   assert.equal(rec.user, 'DIR\\u');
-  assert.equal(rec.model, 'claude-haiku-4-5');
+  assert.equal(rec.model, 'claude-haiku-5-5');
   assert.equal(rec.status, 200);
   assert.equal('content' in rec, false);
 });

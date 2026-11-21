@@ -75,7 +75,7 @@ function listen(app) {
   });
 }
 
-const validBody = { model: 'claude-haiku-4-5', messages: [{ role: 'user', content: 'hi' }] };
+const validBody = { model: 'claude-haiku-5-5', messages: [{ role: 'user', content: 'hi' }] };
 
 module.exports = {
   buildApp, listen, makeUpstreamStub, defaultValidate, validBody,

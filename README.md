@@ -66,7 +66,7 @@ names, plus master dimension and measure definitions. That context is what lets 
 your data in your own terms instead of guessing what "Column 3" is supposed to mean.
 
 You choose the model in the panel, not buried in the properties. "Pick model" switches between the
-Claude models (Haiku 4.5, Sonnet 4.6, Opus 4.8) and the local Ministral models whenever you like.
+Claude models (Haiku 5.5, Sonnet 4.6, Opus 4.8) and the local Ministral models whenever you like.
 Switching starts a fresh thread, because a conversation does not carry across models, and every
 answer says which model wrote it.
 
@@ -161,7 +161,7 @@ extension's properties panel (no code editing required):
 
 | Property | Default | Description |
 |---|---|---|
-| Default model | `claude-haiku-4-5` | The model each session **starts** with, switch any time with **Pick model** in the chat panel |
+| Default model | `claude-haiku-5-5` | The model each session **starts** with, switch any time with **Pick model** in the chat panel |
 | Proxy URL | _(config default)_ | **Required for Claude models.** The hardened proxy's Anthropic route, e.g. `https://your-host:3000/api/anthropic`. **Blank disables Claude entirely**: the Claude models are hidden from this dropdown and from the chat panel's picker, and the object's settings say so |
 | Local model URL | _(config default)_ | **Required for local models.** The proxy's Ollama route, see [Local models](#local-models-ministral-3-via-ollama). Blank disables the local models the same way |
 | Log level | `DEBUG` | Browser-console verbosity: **ERROR / WARN / INFO / DEBUG**. Applied live. Lower it to quieten the console once past testing |
@@ -179,7 +179,7 @@ Advanced defaults can still be tuned in `js/config.js`:
 | Parameter | Default | Description |
 |---|---|---|
 | `API.PROXY_URL` | _(blank)_ | Proxy route for hosted (Anthropic) models, set by the Proxy URL property. **Blank = Claude switched off** and its models withheld from the pickers |
-| `API.MODEL_DEFAULT` | `claude-haiku-4-5` | Model the session starts with, seeded from the Default model property. `API.MODEL_PICK` (null by default) holds an in-panel choice; the model in effect is `resolveActiveModel()` = pick or default, corrected for a backend that is off |
+| `API.MODEL_DEFAULT` | `claude-haiku-5-5` | Model the session starts with, seeded from the Default model property. `API.MODEL_PICK` (null by default) holds an in-panel choice; the model in effect is `resolveActiveModel()` = pick or default, corrected for a backend that is off |
 | `API.MODELS` | 5 entries | Model **registry**: `{ id, label, hint, local, tag }`. Drives both the properties dropdown and the in-panel picker, so they can't drift apart. Add a model here and it appears in both |
 | `API.MAX_TOKENS` | `4000` | Maximum tokens in the response |
 | `API.LOCAL.URL` | _(blank)_ | Proxy route for the local models (Ollama), set by the Local model URL property. **Blank = local models switched off** |

@@ -10,6 +10,20 @@ All notable changes to this extension are documented here.
 > review what leaves your environment before use. Selecting a **local model** (Ministral via
 > Ollama) keeps inference on-machine.
 
+## [Unreleased]
+
+### Changed
+
+- **Model registry moved to the 5.5 generation.** `claude-haiku-4-5` → `claude-haiku-5-5` (also the new
+  shipped default), `claude-sonnet-5` → `claude-sonnet-5-5`, `claude-opus-5` → `claude-opus-5-5` in
+  `API.MODELS` and `API.CONTEXT_WINDOWS` (`js/config.js`). The older IDs are still served upstream but are
+  no longer offered. `CONTEXT_WINDOWS` stays at the conservative 200000 guard even though the 5.5 models
+  accept 1M. The extension sends no sampling parameters, thinking config or forced `tool_choice`, so
+  none of the 5.5 request-shape changes apply. A stored session or object property that names an old ID
+  falls back to the shipped default.
+- Deployments that set `ALLOWED_ANTHROPIC_MODELS` explicitly in the proxy `.env` must add the new IDs, or
+  requests for them are refused (see `proxy/CHANGELOG.md`).
+
 ## [0.5.5] - 2026-09-15
 
 ### Fixed
